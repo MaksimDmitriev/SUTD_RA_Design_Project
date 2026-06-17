@@ -33,6 +33,40 @@ Web-dashboard/
 
 ## Run on the robot
 
+### Laptop: connect by SSH
+
+Run this from your laptop:
+
+```bash
+ssh pi@192.168.149.1
+```
+
+Password:
+
+```text
+raspberrypi
+```
+
+### Laptop: optional SSH key setup
+
+Run this once from your laptop to avoid repeated password prompts during `ssh` and `rsync`:
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/sortibot_ed25519 -C sortibot
+```
+
+Copy the public key to the robot:
+
+```bash
+cat ~/.ssh/sortibot_ed25519.pub | ssh pi@192.168.149.1 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+```
+
+Test the key:
+
+```bash
+ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1
+```
+
 ### Laptop: first build and sync
 
 Run this from your laptop:
@@ -45,18 +79,22 @@ npm install
 npm run build
 cd ../..
 
-ssh pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
 
 rsync -av --delete \
+  -e "ssh -i ~/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
 rsync -av --delete \
+  -e "ssh -i ~/.ssh/sortibot_ed25519" \
   Web-dashboard/frontend/dist/ \
   pi@192.168.149.1:~/Web-dashboard/frontend/dist/
 ```
+
+If you did not set up the SSH key, remove each `-i ~/.ssh/sortibot_ed25519` and `-e "ssh -i ~/.ssh/sortibot_ed25519"` part. You will be asked for the password `raspberrypi` for each `ssh` or `rsync` command.
 
 ### Robot: first backend setup
 
@@ -82,15 +120,17 @@ cd Web-dashboard/frontend
 npm run build
 cd ../..
 
-ssh pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
 
 rsync -av --delete \
+  -e "ssh -i ~/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
 rsync -av --delete \
+  -e "ssh -i ~/.ssh/sortibot_ed25519" \
   Web-dashboard/frontend/dist/ \
   pi@192.168.149.1:~/Web-dashboard/frontend/dist/
 ```
