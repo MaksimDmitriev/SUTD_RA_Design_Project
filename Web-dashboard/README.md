@@ -33,7 +33,34 @@ Web-dashboard/
 
 ## Run on the robot
 
-From the robot:
+### Laptop: first build and sync
+
+Run this from your laptop:
+
+```bash
+cd /Users/maksimandpreeti/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+cd Web-dashboard/frontend
+npm install
+npm run build
+cd ../..
+
+ssh pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+
+rsync -av --delete \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+
+rsync -av --delete \
+  Web-dashboard/frontend/dist/ \
+  pi@192.168.149.1:~/Web-dashboard/frontend/dist/
+```
+
+### Robot: first backend setup
+
+Run this after SSH-ing into the robot:
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -41,6 +68,40 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+### Laptop: sync after changes
+
+After changing frontend or backend files, run this from your laptop:
+
+```bash
+cd /Users/maksimandpreeti/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+cd Web-dashboard/frontend
+npm run build
+cd ../..
+
+ssh pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+
+rsync -av --delete \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+
+rsync -av --delete \
+  Web-dashboard/frontend/dist/ \
+  pi@192.168.149.1:~/Web-dashboard/frontend/dist/
+```
+
+### Robot: restart after sync
+
+If the backend is already running on the robot, press `Ctrl+C`, then run:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
@@ -58,14 +119,14 @@ http://192.168.149.1:8000
 
 ## Development mode
 
-Run the backend:
+### Robot or laptop: backend only
 
 ```bash
 cd Web-dashboard/backend
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Run the React dev server:
+### Laptop: React dev server
 
 ```bash
 cd Web-dashboard/frontend
