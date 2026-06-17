@@ -1,0 +1,60 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+.venv/
+venv/
+env/
+pip-wheel-metadata/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / React / Vite
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Robot runtime data
+Web-dashboard/data/
+Web-dashboard/backend/data/
+Robot-Code_SUTD_RA_Design_Project/logs/
+Robot-Code_SUTD_RA_Design_Project/data/
+*.log
+
+# ML artifacts and model caches
+*.pt
+*.pth
+*.onnx
+*.ncnn
+*.bin
+*.safetensors
+*_ncnn_model/
+models/
+checkpoints/
+
+# Media captures
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.webp
+!docs/**/*.png
+!docs/**/*.jpg
