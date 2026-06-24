@@ -55,13 +55,13 @@ Run this once from your laptop to avoid repeated password prompts during `ssh` a
 ssh-keygen -t ed25519 -f $HOME/.ssh/sortibot_ed25519 -C sortibot
 ```
 
-Copy the public key to the robot:
+Run this on the laptop to copy the public key to the robot:
 
 ```bash
 cat $HOME/.ssh/sortibot_ed25519.pub | ssh pi@192.168.149.1 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
 ```
 
-Test the key:
+Run this on the laptop to test the key:
 
 ```bash
 ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1
@@ -145,7 +145,7 @@ source .venv/bin/activate
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-If the Hiwonder camera stream is not at the default URL, set:
+Run this on the robot if the Hiwonder camera stream is not at the default URL:
 
 ```bash
 export SORTIBOT_CAMERA_URL="http://127.0.0.1:8080?action=stream"
@@ -168,7 +168,7 @@ http://192.168.149.1:8000
 
 ### Laptop: pull captured images from robot
 
-Captured images are stored on the robot under `~/Web-dashboard/data/`. Pull them to your laptop storage directory with:
+Captured images are stored on the robot under `~/Web-dashboard/data/`. Run this on the laptop to pull them to your laptop storage directory:
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -187,7 +187,7 @@ If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed
 
 ### Laptop: push captured images to robot
 
-Push your laptop dataset storage directory back to the robot with:
+Run this on the laptop to push your laptop dataset storage directory back to the robot:
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -206,12 +206,16 @@ If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed
 
 ### Robot or laptop: backend only
 
+Run this on the robot or laptop:
+
 ```bash
 cd Web-dashboard/backend
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Laptop: React dev server
+
+Run this on the laptop:
 
 ```bash
 cd Web-dashboard/frontend
@@ -229,9 +233,13 @@ OpenCLIP is used for semantic classification, not object localization. The norma
 camera frame -> optional crop -> OpenCLIP prompt classification -> Trash / Keep / Ignore
 ```
 
-Install dependencies in the backend virtual environment:
+### Robot: install OpenCLIP Python packages
+
+Run this on the robot in the backend virtual environment:
 
 ```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
 python -m pip install torch torchvision
 python -m pip install open_clip_torch pillow
 ```
@@ -239,5 +247,52 @@ python -m pip install open_clip_torch pillow
 The first model load may download pretrained weights. That does not send your images anywhere, but it does require internet access once. After the weights are cached, inference is local.
 
 If the robot is in AP mode with no internet, either switch it to Wi-Fi/client mode temporarily or download the model cache on another machine and copy it to the robot.
+
+### Laptop: download OpenCLIP weights
+
+Run this on the laptop to download/cache the same OpenCLIP model weights used by the backend:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/Web-dashboard/backend
+
+python3 -m venv .openclip-download-venv
+source .openclip-download-venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install torch torchvision open_clip_torch pillow
+
+python - <<'PY'
+from clip_classifier import ClipClassifier
+
+classifier = ClipClassifier()
+classifier.load()
+print("OpenCLIP weights downloaded into the local cache.")
+PY
+```
+
+### Laptop: copy OpenCLIP weights to robot
+
+Run this on the laptop after downloading the weights:
+
+```bash
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/.cache/clip ~/.cache/huggingface"
+
+if [ -d "$HOME/.cache/clip" ]; then
+  rsync -av \
+    -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+    "$HOME/.cache/clip"/ \
+    pi@192.168.149.1:~/.cache/clip/
+fi
+
+if [ -d "$HOME/.cache/huggingface" ]; then
+  rsync -av \
+    -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+    "$HOME/.cache/huggingface"/ \
+    pi@192.168.149.1:~/.cache/huggingface/
+fi
+```
+
+If you did not set up the SSH key, remove each `-i $HOME/.ssh/sortibot_ed25519` and `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` part.
+
+Copying these cache folders only copies model weights. The robot still needs the Python packages installed in `.venv`.
 
 Start with whole-frame classification or a fixed pickup-zone crop. Add YOLO later when you need bounding boxes.
