@@ -106,7 +106,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8000
+python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 ### Laptop: sync after changes
@@ -142,7 +142,7 @@ If the backend is already running on the robot, press `Ctrl+C`, then run:
 ```bash
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
-uvicorn app:app --host 0.0.0.0 --port 8000
+python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 Run this on the robot if the Hiwonder camera stream is not at the default URL:
@@ -233,15 +233,83 @@ OpenCLIP is used for semantic classification, not object localization. The norma
 camera frame -> optional crop -> OpenCLIP prompt classification -> Trash / Keep / Ignore
 ```
 
-### Robot: install OpenCLIP Python packages
+Do not install `torch torchvision open_clip_torch` directly from the default PyPI index on the Raspberry Pi. That can pull large CUDA/NVIDIA packages such as `nvidia-*`, `cuda-*`, and `triton`, which are not useful on the robot and can fill the SD card.
 
-Run this on the robot in the backend virtual environment:
+There are two requirements files on purpose:
+
+- `requirements.txt` contains the basic dashboard/server/camera packages.
+- `requirements-openclip.txt` contains OpenCLIP support packages and is installed only after CPU-only PyTorch is installed.
+
+This split prevents a normal `pip install -r requirements.txt` from accidentally pulling the wrong PyTorch/CUDA dependency set on the Raspberry Pi.
+
+### Robot: create the backend virtual environment
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+```
+
+### Robot: install dashboard packages
+
+Run this on the robot:
 
 ```bash
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
-python -m pip install torch torchvision
-python -m pip install open_clip_torch pillow
+python -m pip install --no-cache-dir -r requirements.txt
+```
+
+### Robot: install CPU-only PyTorch
+
+Run this on the robot. This avoids CUDA/NVIDIA packages:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -m pip install --no-cache-dir \
+  --index-url https://download.pytorch.org/whl/cpu \
+  --trusted-host download.pytorch.org \
+  torch torchvision
+```
+
+### Robot: install OpenCLIP packages
+
+Run this on the robot after CPU-only PyTorch is installed:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -m pip install --no-cache-dir \
+  --trusted-host pypi.org \
+  --trusted-host files.pythonhosted.org \
+  --trusted-host www.piwheels.org \
+  -r requirements-openclip.txt
+```
+
+If SSL works normally on the robot, the `--trusted-host` options are not needed. They are included because internet sharing through another laptop may cause certificate verification failures.
+
+### Robot: verify OpenCLIP packages
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -c "import torch; import torchvision; import open_clip; print(torch.__version__); print('OpenCLIP OK')"
+```
+
+Expected output should include `+cpu`, for example:
+
+```text
+2.12.1+cpu
+OpenCLIP OK
 ```
 
 The first model load may download pretrained weights. That does not send your images anywhere, but it does require internet access once. After the weights are cached, inference is local.
@@ -294,5 +362,44 @@ fi
 If you did not set up the SSH key, remove each `-i $HOME/.ssh/sortibot_ed25519` and `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` part.
 
 Copying these cache folders only copies model weights. The robot still needs the Python packages installed in `.venv`.
+
+### Robot: check copied OpenCLIP weights
+
+Run this on the robot:
+
+```bash
+du -h -d 2 ~/.cache/huggingface 2>/dev/null
+du -h -d 2 ~/.cache/clip 2>/dev/null
+```
+
+For the current backend model, a useful sign is a cache directory like:
+
+```text
+~/.cache/huggingface/hub/models--laion--CLIP-ViT-B-32-laion2B-s34B-b79K
+```
+
+### Robot: verify OpenCLIP model load
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -c "from clip_classifier import ClipClassifier; c=ClipClassifier(); c.load(); print('OpenCLIP model loaded OK')"
+```
+
+If this prints `OpenCLIP model loaded OK`, packages and weights are working.
+
+### Robot: optional storage cleanup
+
+Run this on the robot to reclaim temporary package/cache space:
+
+```bash
+rm -rf ~/.cache/pip
+rm -rf /tmp/pip-*
+sudo apt-get clean
+df -h
+```
 
 Start with whole-frame classification or a fixed pickup-zone crop. Add YOLO later when you need bounding boxes.
