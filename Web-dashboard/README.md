@@ -151,6 +151,15 @@ If the Hiwonder camera stream is not at the default URL, set:
 export SORTIBOT_CAMERA_URL="http://127.0.0.1:8080?action=stream"
 ```
 
+### Robot: optional camera tuning
+
+Run this on the robot if the camera stream is too bright or over-saturated:
+
+```bash
+v4l2-ctl -d /dev/video0 \
+  --set-ctrl=brightness=-20,contrast=30,saturation=25,gamma=70,sharpness=8,backlight_compensation=0
+```
+
 Open from your laptop while connected to the robot network:
 
 ```text
