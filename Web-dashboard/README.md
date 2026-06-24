@@ -52,19 +52,19 @@ raspberrypi
 Run this once from your laptop to avoid repeated password prompts during `ssh` and `rsync`:
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/sortibot_ed25519 -C sortibot
+ssh-keygen -t ed25519 -f $HOME/.ssh/sortibot_ed25519 -C sortibot
 ```
 
 Copy the public key to the robot:
 
 ```bash
-cat ~/.ssh/sortibot_ed25519.pub | ssh pi@192.168.149.1 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
+cat $HOME/.ssh/sortibot_ed25519.pub | ssh pi@192.168.149.1 "mkdir -p ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 700 ~/.ssh && chmod 600 ~/.ssh/authorized_keys"
 ```
 
 Test the key:
 
 ```bash
-ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1
 ```
 
 ### Laptop: first build and sync
@@ -72,29 +72,29 @@ ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1
 Run this from your laptop:
 
 ```bash
-cd /Users/maksimandpreeti/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 
 cd Web-dashboard/frontend
 npm install
 npm run build
 cd ../..
 
-ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
 
 rsync -av --delete \
-  -e "ssh -i ~/.ssh/sortibot_ed25519" \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
 rsync -av --delete \
-  -e "ssh -i ~/.ssh/sortibot_ed25519" \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   Web-dashboard/frontend/dist/ \
   pi@192.168.149.1:~/Web-dashboard/frontend/dist/
 ```
 
-If you did not set up the SSH key, remove each `-i ~/.ssh/sortibot_ed25519` and `-e "ssh -i ~/.ssh/sortibot_ed25519"` part. You will be asked for the password `raspberrypi` for each `ssh` or `rsync` command.
+If you did not set up the SSH key, remove each `-i $HOME/.ssh/sortibot_ed25519` and `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` part. You will be asked for the password `raspberrypi` for each `ssh` or `rsync` command.
 
 ### Robot: first backend setup
 
@@ -114,23 +114,23 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 After changing frontend or backend files, run this from your laptop:
 
 ```bash
-cd /Users/maksimandpreeti/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 
 cd Web-dashboard/frontend
 npm run build
 cd ../..
 
-ssh -i ~/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/Web-dashboard/backend ~/Web-dashboard/frontend/dist"
 
 rsync -av --delete \
-  -e "ssh -i ~/.ssh/sortibot_ed25519" \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
 rsync -av --delete \
-  -e "ssh -i ~/.ssh/sortibot_ed25519" \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   Web-dashboard/frontend/dist/ \
   pi@192.168.149.1:~/Web-dashboard/frontend/dist/
 ```
@@ -156,6 +156,42 @@ Open from your laptop while connected to the robot network:
 ```text
 http://192.168.149.1:8000
 ```
+
+### Laptop: pull captured images from robot
+
+Captured images are stored on the robot under `~/Web-dashboard/data/`. Pull them to your laptop storage directory with:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
+
+mkdir -p "$SUTD_RA_DESIGN_PROJECT_DATA"
+
+rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  pi@192.168.149.1:~/Web-dashboard/data/ \
+  "$SUTD_RA_DESIGN_PROJECT_DATA"/
+```
+
+If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pulling images unless you intentionally want your laptop copy to exactly match the robot copy.
+
+### Laptop: push captured images to robot
+
+Push your laptop dataset storage directory back to the robot with:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
+
+rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  "$SUTD_RA_DESIGN_PROJECT_DATA"/ \
+  pi@192.168.149.1:~/Web-dashboard/data/
+```
+
+If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pushing images unless you intentionally want the robot copy to exactly match your laptop copy.
 
 ## Development mode
 
