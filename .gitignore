@@ -56,5 +56,10 @@ checkpoints/
 *.jpeg
 *.png
 *.webp
+!Web-dashboard/frontend/src/assets/
+!Web-dashboard/frontend/src/assets/*.png
 !docs/**/*.png
 !docs/**/*.jpg
+
+# Generated reports and exports
+outputs/
