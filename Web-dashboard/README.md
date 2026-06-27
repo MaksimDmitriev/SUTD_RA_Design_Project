@@ -627,7 +627,13 @@ The label file contains the bounding box:
 0 x_center y_center width height
 ```
 
-Use a labeling tool such as CVAT, Roboflow, Label Studio, or labelImg to draw one box around each object and export YOLO-format labels.
+Use a labeling tool to draw one box around each object and export YOLO-format labels. Recommended for this project: **CVAT**. It supports bounding-box annotation and YOLO export, works well for small object-detection datasets, and avoids depending on a paid dataset-hosting workflow.
+
+Other options:
+
+- Roboflow: convenient hosted workflow, but more platform-dependent.
+- Label Studio: flexible, but more general-purpose than needed for simple YOLO boxes.
+- labelImg: simple, but no longer actively developed; use it only if you want a very lightweight local tool.
 
 Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `datasets/sortibot_detector/data.yaml`, with:
 
