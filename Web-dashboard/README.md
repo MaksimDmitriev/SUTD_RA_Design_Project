@@ -536,46 +536,6 @@ capture images on robot
 
 The model does not learn from new captures until you retrain or fine-tune it and copy the new model to the robot.
 
-### Recommended YOLO dataset structure on the laptop
-
-Keep YOLO training data outside git or under an ignored folder. The current `.gitignore` ignores `models/`, model weights, and captured media.
-
-Recommended laptop layout:
-
-```text
-datasets/sortibot_detector/
-  data.yaml
-  images/
-    train/
-    val/
-  labels/
-    train/
-    val/
-```
-
-Start with one detection class:
-
-```yaml
-path: datasets/sortibot_detector
-train: images/train
-val: images/val
-names:
-  0: floor_object
-```
-
-Use a labeling tool such as CVAT, Roboflow, Label Studio, or labelImg to draw one box around each object and export YOLO-format labels.
-
-Later, if needed, you can train multiple detector classes such as:
-
-```yaml
-names:
-  0: trash_like_object
-  1: useful_object
-  2: unknown_object
-```
-
-But for the current stage, one class named `floor_object` is enough because OpenCLIP will classify the crop.
-
 ### Laptop: pull new captures before labeling
 
 Run this on the laptop:
@@ -593,11 +553,94 @@ rsync -av \
   "$SUTD_RA_DESIGN_PROJECT_DATA"/
 ```
 
-Then copy selected images from `Web-dashboard/data/...` into `datasets/sortibot_detector/images/train` and `datasets/sortibot_detector/images/val`, and create matching YOLO label files under `labels/train` and `labels/val`.
+After pulling images, keep the original captured folders as your raw dataset archive. The YOLO training dataset is a separate labeled copy prepared in the next section.
 
 ### Laptop: train YOLO
 
-Run this on the laptop after preparing `datasets/sortibot_detector/data.yaml`:
+Run these steps on the laptop.
+
+Create the YOLO dataset folders:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p datasets/sortibot_detector/images/train
+mkdir -p datasets/sortibot_detector/images/val
+mkdir -p datasets/sortibot_detector/labels/train
+mkdir -p datasets/sortibot_detector/labels/val
+```
+
+Save this file as:
+
+```text
+datasets/sortibot_detector/data.yaml
+```
+
+File content:
+
+```yaml
+path: datasets/sortibot_detector
+train: images/train
+val: images/val
+names:
+  0: floor_object
+```
+
+`floor_object` means: **any visible object on the floor that the robot should stop and inspect**. It is only a detector class. It does not mean trash, keep, or ignore. YOLO will find the object box, then OpenCLIP will classify the cropped object as Trash / Keep / Ignore.
+
+Copy selected images from the pulled capture folders into the YOLO dataset:
+
+```text
+Web-dashboard/data/trash/   -> datasets/sortibot_detector/images/train or images/val
+Web-dashboard/data/keep/    -> datasets/sortibot_detector/images/train or images/val
+Web-dashboard/data/ignore/  -> datasets/sortibot_detector/images/train or images/val
+```
+
+Use this split:
+
+- Put about 80% of useful images into `images/train`.
+- Put about 20% of useful images into `images/val`.
+- Include images from `trash`, `keep`, and `ignore` in both splits if possible.
+- Do not copy very blurry images unless you intentionally want the detector to learn that condition.
+- For the one-class detector, all labeled objects use class id `0` because all boxes are `floor_object`.
+
+Example:
+
+```text
+datasets/sortibot_detector/images/train/wrapper_001.jpg
+datasets/sortibot_detector/labels/train/wrapper_001.txt
+
+datasets/sortibot_detector/images/val/toy_car_001.jpg
+datasets/sortibot_detector/labels/val/toy_car_001.txt
+```
+
+Each image must have a matching label file with the same base name:
+
+```text
+images/train/wrapper_001.jpg
+labels/train/wrapper_001.txt
+```
+
+The label file contains the bounding box:
+
+```text
+0 x_center y_center width height
+```
+
+Use a labeling tool such as CVAT, Roboflow, Label Studio, or labelImg to draw one box around each object and export YOLO-format labels.
+
+Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `datasets/sortibot_detector/data.yaml`, with:
+
+```yaml
+names:
+  0: trash_like_object
+  1: useful_object
+  2: unknown_object
+```
+
+For the current stage, keep one class named `floor_object` because OpenCLIP will classify the crop.
+
+After the dataset is prepared, install Ultralytics and train:
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -724,6 +767,30 @@ PY
 
 Use any existing image path on the robot if that sample image is not present.
 
+Expected output is either a `Boxes(...)` object with detections or an empty boxes object if the model runs but does not detect anything in that image.
+
+Example successful output with a detection:
+
+```text
+ultralytics.engine.results.Boxes object with attributes:
+...
+cls: tensor([0.])
+conf: tensor([0.82])
+xyxy: tensor([[123.4, 210.5, 356.7, 420.1]])
+```
+
+Example successful output with no detections:
+
+```text
+ultralytics.engine.results.Boxes object with attributes:
+...
+cls: tensor([])
+conf: tensor([])
+xyxy: tensor([], size=(0, 4))
+```
+
+If you see an import error, model path error, or NCNN loading error, the runtime package or copied model folder is not set up correctly.
+
 ### How to refresh the model after adding images
 
 When you capture more images:
@@ -734,6 +801,14 @@ When you capture more images:
 4. Retrain or fine-tune YOLO on the laptop.
 5. Export the new `best.pt` to NCNN.
 6. Copy the exported model folder to `~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/`.
-7. Restart the backend or robot logic so it loads the new model.
+7. Restart the backend so it loads the new model.
 
-For OpenCLIP, there is no training step in the current setup. Adding images does not change OpenCLIP weights. To improve OpenCLIP behavior, update prompts, evaluate mistakes, or later train a separate classifier. For now, use YOLO to crop the object and OpenCLIP to classify the crop.
+Run this on the robot to restart the backend:
+
+```bash
+# If uvicorn is already running, press Ctrl+C first.
+
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+python -m uvicorn app:app --host 0.0.0.0 --port 8000
+```
