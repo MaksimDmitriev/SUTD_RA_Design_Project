@@ -2,6 +2,26 @@
 
 Minimal React + FastAPI dashboard for the MasterPi robot.
 
+## High-level system flow
+
+Target robot behavior:
+
+```text
+robot moves forward slowly
+  -> camera sees possible object
+  -> YOLO detects object box
+  -> robot stops if box is inside the pickup/search zone
+  -> crop object from the frame
+  -> OpenCLIP classifies crop as Trash / Keep / Ignore
+  -> robot decides: throw away, keep, or ignore
+```
+
+In this design:
+
+- YOLO answers: **where is the object?**
+- OpenCLIP answers: **what kind of object is it semantically?**
+- The policy layer answers: **what should the robot do?**
+
 ## Why FastAPI for the server
 
 FastAPI is a good fit for this project because it keeps the server small while still supporting:
@@ -31,7 +51,9 @@ Web-dashboard/
       styles.css
 ```
 
-## Run on the robot
+## Deploy and run the dashboard
+
+Each command block says whether it runs on the laptop or on the robot.
 
 ### Laptop: connect by SSH
 
@@ -85,6 +107,7 @@ rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
@@ -96,7 +119,7 @@ rsync -av --delete \
 
 If you did not set up the SSH key, remove each `-i $HOME/.ssh/sortibot_ed25519` and `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` part. You will be asked for the password `raspberrypi` for each `ssh` or `rsync` command.
 
-### Robot: first backend setup
+### Robot: install all Python packages
 
 Run this after SSH-ing into the robot:
 
@@ -104,8 +127,37 @@ Run this after SSH-ing into the robot:
 cd ~/Web-dashboard/backend
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install --no-cache-dir -r requirements.txt
+
+python -m pip install --no-cache-dir \
+  --index-url https://download.pytorch.org/whl/cpu \
+  --trusted-host download.pytorch.org \
+  torch torchvision
+
+python -m pip install --no-cache-dir \
+  --trusted-host pypi.org \
+  --trusted-host files.pythonhosted.org \
+  --trusted-host www.piwheels.org \
+  -r requirements-openclip.txt
+```
+
+The package installation order matters:
+
+1. Update installer tools: `pip`, `setuptools`, `wheel`.
+2. Install dashboard packages from `requirements.txt`.
+3. Install CPU-only PyTorch from the PyTorch CPU wheel index.
+4. Install OpenCLIP support packages from `requirements-openclip.txt`.
+
+Do not install `torch torchvision open_clip_torch` directly from the default PyPI index on the Raspberry Pi. That can pull large CUDA/NVIDIA packages and fill the SD card.
+
+### Robot: start backend
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
 python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
@@ -126,6 +178,7 @@ rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
@@ -143,12 +196,6 @@ If the backend is already running on the robot, press `Ctrl+C`, then run:
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
 python -m uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-Run this on the robot if the Hiwonder camera stream is not at the default URL:
-
-```bash
-export SORTIBOT_CAMERA_URL="http://127.0.0.1:8080?action=stream"
 ```
 
 ### Robot: optional camera tuning
@@ -185,9 +232,11 @@ rsync -av \
 
 If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pulling images unless you intentionally want your laptop copy to exactly match the robot copy.
 
-### Laptop: push captured images to robot
+### Laptop: optional restore captured images to robot
 
-Run this on the laptop to push your laptop dataset storage directory back to the robot:
+Normally, you do not need to push captured images back to the robot. Keep the main dataset on the laptop or cloud storage. The robot's `~/Web-dashboard/data/` folder is mainly a temporary capture buffer.
+
+Only run this if you intentionally want to restore images to the robot, for example to test `/api/predict` on known sample files or to recover a robot copy after deleting captures:
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -232,67 +281,6 @@ OpenCLIP is used for semantic classification, not object localization. The norma
 ```text
 camera frame -> optional crop -> OpenCLIP prompt classification -> Trash / Keep / Ignore
 ```
-
-Do not install `torch torchvision open_clip_torch` directly from the default PyPI index on the Raspberry Pi. That can pull large CUDA/NVIDIA packages such as `nvidia-*`, `cuda-*`, and `triton`, which are not useful on the robot and can fill the SD card.
-
-There are two requirements files on purpose:
-
-- `requirements.txt` contains the basic dashboard/server/camera packages.
-- `requirements-openclip.txt` contains OpenCLIP support packages and is installed only after CPU-only PyTorch is installed.
-
-This split prevents a normal `pip install -r requirements.txt` from accidentally pulling the wrong PyTorch/CUDA dependency set on the Raspberry Pi.
-
-### Robot: create the backend virtual environment
-
-Run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-```
-
-### Robot: install dashboard packages
-
-Run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-python -m pip install --no-cache-dir -r requirements.txt
-```
-
-### Robot: install CPU-only PyTorch
-
-Run this on the robot. This avoids CUDA/NVIDIA packages:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -m pip install --no-cache-dir \
-  --index-url https://download.pytorch.org/whl/cpu \
-  --trusted-host download.pytorch.org \
-  torch torchvision
-```
-
-### Robot: install OpenCLIP packages
-
-Run this on the robot after CPU-only PyTorch is installed:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -m pip install --no-cache-dir \
-  --trusted-host pypi.org \
-  --trusted-host files.pythonhosted.org \
-  --trusted-host www.piwheels.org \
-  -r requirements-openclip.txt
-```
-
-If SSL works normally on the robot, the `--trusted-host` options are not needed. They are included because internet sharing through another laptop may cause certificate verification failures.
 
 ### Robot: verify OpenCLIP packages
 
@@ -403,3 +391,252 @@ df -h
 ```
 
 Start with whole-frame classification or a fixed pickup-zone crop. Add YOLO later when you need bounding boxes.
+
+## YOLO detection and retraining workflow
+
+### What YOLO should do in this project
+
+Use YOLO for object detection/localization, not as the only trash/keep/ignore decision maker.
+
+This is better than training YOLO directly on `trash`, `keep`, and `ignore` at the beginning, because `trash` vs `keep` is often semantic and context-dependent. For example, a toy car is an object YOLO can localize, but whether it should be kept or ignored is better handled by the classifier/policy layer.
+
+### Important: captured images do not automatically retrain the model
+
+When you press the dashboard capture buttons, images are saved under:
+
+```text
+~/Web-dashboard/data/trash/
+~/Web-dashboard/data/keep/
+~/Web-dashboard/data/ignore/
+```
+
+Those folders are useful for classification testing and OpenCLIP prompt evaluation. They are **not enough for YOLO training** because YOLO needs bounding-box labels.
+
+For YOLO, each training image needs a label file that says where the object is:
+
+```text
+class_id x_center y_center width height
+```
+
+The coordinates are normalized from `0` to `1`. Example:
+
+```text
+0 0.512 0.438 0.214 0.180
+```
+
+So the training loop is:
+
+```text
+capture images on robot
+  -> pull images to laptop
+  -> draw bounding boxes with a labeling tool
+  -> export dataset in YOLO format
+  -> train YOLO on laptop/cloud
+  -> export a small model for Raspberry Pi
+  -> copy model to robot
+  -> restart backend / robot logic
+```
+
+The model does not learn from new captures until you retrain or fine-tune it and copy the new model to the robot.
+
+### Recommended YOLO dataset structure on the laptop
+
+Keep YOLO training data outside git or under an ignored folder. The current `.gitignore` ignores `models/`, model weights, and captured media.
+
+Recommended laptop layout:
+
+```text
+datasets/sortibot_detector/
+  data.yaml
+  images/
+    train/
+    val/
+  labels/
+    train/
+    val/
+```
+
+Start with one detection class:
+
+```yaml
+path: datasets/sortibot_detector
+train: images/train
+val: images/val
+names:
+  0: floor_object
+```
+
+Use a labeling tool such as CVAT, Roboflow, Label Studio, or labelImg to draw one box around each object and export YOLO-format labels.
+
+Later, if needed, you can train multiple detector classes such as:
+
+```yaml
+names:
+  0: trash_like_object
+  1: useful_object
+  2: unknown_object
+```
+
+But for the current stage, one class named `floor_object` is enough because OpenCLIP will classify the crop.
+
+### Laptop: pull new captures before labeling
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
+
+mkdir -p "$SUTD_RA_DESIGN_PROJECT_DATA"
+
+rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  pi@192.168.149.1:~/Web-dashboard/data/ \
+  "$SUTD_RA_DESIGN_PROJECT_DATA"/
+```
+
+Then copy selected images from `Web-dashboard/data/...` into `datasets/sortibot_detector/images/train` and `datasets/sortibot_detector/images/val`, and create matching YOLO label files under `labels/train` and `labels/val`.
+
+### Laptop: train YOLO
+
+Run this on the laptop after preparing `datasets/sortibot_detector/data.yaml`:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+python3 -m venv .yolo-train-venv
+source .yolo-train-venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install ultralytics
+
+yolo detect train \
+  model=yolo26n.pt \
+  data=datasets/sortibot_detector/data.yaml \
+  imgsz=640 \
+  epochs=80 \
+  batch=8 \
+  project=runs/sortibot \
+  name=floor_object_detector
+```
+
+If your Ultralytics version does not have `yolo26n.pt`, use the nano model available in that version, for example `yolo11n.pt`.
+
+On an Apple Silicon laptop, you can try:
+
+```bash
+yolo detect train \
+  model=yolo26n.pt \
+  data=datasets/sortibot_detector/data.yaml \
+  imgsz=640 \
+  epochs=80 \
+  batch=8 \
+  device=mps \
+  project=runs/sortibot \
+  name=floor_object_detector
+```
+
+Training on the Raspberry Pi itself is not recommended. It is much slower and can fill the SD card. Train on the laptop or a cloud GPU, then copy only the exported model to the robot.
+
+### Laptop: validate and export for Raspberry Pi
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+source .yolo-train-venv/bin/activate
+
+yolo detect val \
+  model=runs/sortibot/floor_object_detector/weights/best.pt \
+  data=datasets/sortibot_detector/data.yaml \
+  imgsz=640
+
+yolo export \
+  model=runs/sortibot/floor_object_detector/weights/best.pt \
+  format=ncnn \
+  imgsz=640
+```
+
+The export should create a folder similar to:
+
+```text
+runs/sortibot/floor_object_detector/weights/best_ncnn_model/
+```
+
+NCNN is preferred for Raspberry Pi because it is optimized for ARM/mobile inference.
+
+### Laptop: copy YOLO model to robot
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 \
+  "mkdir -p ~/Web-dashboard/models/detector"
+
+rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  runs/sortibot/floor_object_detector/weights/best_ncnn_model/ \
+  pi@192.168.149.1:~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
+```
+
+Model files should stay out of git. Store the active robot model here:
+
+```text
+~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
+```
+
+The matching local laptop path can be:
+
+```text
+Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
+```
+
+but it is ignored by git.
+
+### Robot: install YOLO runtime package
+
+Run this on the robot after CPU-only PyTorch is already installed:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -m pip install --no-cache-dir ultralytics
+```
+
+Do not install YOLO/Ultralytics before the CPU-only PyTorch step. Otherwise pip may try to pull a large or wrong PyTorch dependency set.
+
+### Robot: quick YOLO model test
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from ultralytics import YOLO
+
+model = YOLO("/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model")
+results = model("/home/pi/Web-dashboard/data/trash/20260619_155044_618393.jpg", imgsz=640, conf=0.25)
+print(results[0].boxes)
+PY
+```
+
+Use any existing image path on the robot if that sample image is not present.
+
+### How to refresh the model after adding images
+
+When you capture more images:
+
+1. Run **Laptop: pull new captures before labeling**.
+2. Add useful images to the YOLO dataset.
+3. Draw bounding boxes and export YOLO labels.
+4. Retrain or fine-tune YOLO on the laptop.
+5. Export the new `best.pt` to NCNN.
+6. Copy the exported model folder to `~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/`.
+7. Restart the backend or robot logic so it loads the new model.
+
+For OpenCLIP, there is no training step in the current setup. Adding images does not change OpenCLIP weights. To improve OpenCLIP behavior, update prompts, evaluate mistakes, or later train a separate classifier. For now, use YOLO to crop the object and OpenCLIP to classify the crop.
