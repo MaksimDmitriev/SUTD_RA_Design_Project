@@ -392,6 +392,103 @@ df -h
 
 Start with whole-frame classification or a fixed pickup-zone crop. Add YOLO later when you need bounding boxes.
 
+### How to improve OpenCLIP classification
+
+In the current setup, OpenCLIP is **not retrained** when you add new images. It is used as a zero-shot classifier:
+
+```text
+image or crop -> compare with text prompts -> Trash / Keep / Ignore
+```
+
+Adding images to `~/Web-dashboard/data/trash`, `~/Web-dashboard/data/keep`, or `~/Web-dashboard/data/ignore` gives you more examples for testing, but it does not change OpenCLIP weights.
+
+The current prompts are defined in:
+
+```text
+Web-dashboard/backend/clip_classifier.py
+```
+
+Look for:
+
+```python
+PROMPTS = {
+    "trash": [...],
+    "keep": [...],
+    "ignore": [...],
+}
+```
+
+If OpenCLIP misclassifies objects, first update those prompts. For example:
+
+```python
+PROMPTS = {
+    "trash": [
+        "a photo of a tissue on the floor",
+        "a photo of a plastic wrapper on the floor",
+        "a photo of a disposable food wrapper on the floor",
+        "a photo of rubbish or waste on the floor",
+    ],
+    "keep": [
+        "a photo of a useful personal object on the floor",
+        "a photo of a toy that should be kept",
+        "a photo of a sock or clothing item on the floor",
+        "a photo of an object that should be picked up and saved",
+    ],
+    "ignore": [
+        "a photo of a cable on the floor",
+        "a photo of a heavy object on the floor",
+        "a photo of an unsafe object on the floor",
+        "a photo of floor with no relevant object",
+    ],
+}
+```
+
+After changing prompts, sync backend changes to the robot and restart the backend:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+```
+
+Then run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+python -m uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+The usual OpenCLIP improvement loop is:
+
+```text
+capture more images
+  -> pull images to laptop
+  -> test predictions
+  -> inspect wrong examples
+  -> adjust prompts and thresholds
+  -> sync backend to robot
+  -> test again
+```
+
+If prompt tuning is not enough, do **not** fine-tune the full OpenCLIP model first. A better next step is to freeze OpenCLIP and train a small classifier on top of OpenCLIP image embeddings.
+
+Recommended progression:
+
+1. Prompt tuning: fastest and easiest.
+2. YOLO crop before OpenCLIP: usually improves classification because background is removed.
+3. Threshold/policy tuning: send low-confidence predictions to `ignore`.
+4. Train a small classifier on OpenCLIP embeddings using your captured folders.
+5. Full OpenCLIP fine-tuning: only if the previous steps fail and you have a much larger dataset.
+
+For the current robot, steps 1-3 are the right priority. Full OpenCLIP fine-tuning is heavy and not recommended on the Raspberry Pi.
+
 ## YOLO detection and retraining workflow
 
 ### What YOLO should do in this project
