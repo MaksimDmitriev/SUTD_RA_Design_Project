@@ -224,32 +224,13 @@ export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
 
 mkdir -p "$SUTD_RA_DESIGN_PROJECT_DATA"
 
-rsync -av \
+rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   pi@192.168.149.1:~/Web-dashboard/data/ \
   "$SUTD_RA_DESIGN_PROJECT_DATA"/
 ```
 
 If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pulling images unless you intentionally want your laptop copy to exactly match the robot copy.
-
-### Laptop: optional restore captured images to robot
-
-Normally, you do not need to push captured images back to the robot. Keep the main dataset on the laptop or cloud storage. The robot's `~/Web-dashboard/data/` folder is mainly a temporary capture buffer.
-
-Only run this if you intentionally want to restore images to the robot, for example to test `/api/predict` on known sample files or to recover a robot copy after deleting captures:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
-
-rsync -av \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  "$SUTD_RA_DESIGN_PROJECT_DATA"/ \
-  pi@192.168.149.1:~/Web-dashboard/data/
-```
-
-If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pushing images unless you intentionally want the robot copy to exactly match your laptop copy.
 
 ## Development mode
 
@@ -333,14 +314,14 @@ Run this on the laptop after downloading the weights:
 ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/.cache/clip ~/.cache/huggingface"
 
 if [ -d "$HOME/.cache/clip" ]; then
-  rsync -av \
+  rsync -av --delete \
     -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
     "$HOME/.cache/clip"/ \
     pi@192.168.149.1:~/.cache/clip/
 fi
 
 if [ -d "$HOME/.cache/huggingface" ]; then
-  rsync -av \
+  rsync -av --delete \
     -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
     "$HOME/.cache/huggingface"/ \
     pi@192.168.149.1:~/.cache/huggingface/
@@ -646,6 +627,20 @@ names:
 
 For the current stage, keep one class named `floor_object` because OpenCLIP will classify the crop.
 
+### Laptop: back up YOLO dataset
+
+Run this on the laptop after creating or updating the YOLO dataset. It mirrors `datasets/sortibot_detector/` into `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET` and removes files from the destination that no longer exist in the local dataset.
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"
+
+rsync -av --delete \
+  datasets/sortibot_detector/ \
+  "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"/
+```
+
 After the dataset is prepared, install Ultralytics and train:
 
 ```bash
@@ -721,7 +716,7 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 \
   "mkdir -p ~/Web-dashboard/models/detector"
 
-rsync -av \
+rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   runs/sortibot/floor_object_detector/weights/best_ncnn_model/ \
   pi@192.168.149.1:~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
