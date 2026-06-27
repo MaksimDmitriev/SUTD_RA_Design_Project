@@ -621,7 +621,7 @@ images/train/wrapper_001.jpg
 labels/train/wrapper_001.txt
 ```
 
-The label file contains the bounding box:
+Initially, the label files are empty. Then they will contain bounding boxes:
 
 ```text
 0 x_center y_center width height
