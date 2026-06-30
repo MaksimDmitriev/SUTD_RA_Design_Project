@@ -89,6 +89,32 @@ Run this on the laptop to test the key:
 ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1
 ```
 
+### Robot: connect internet with a USB Wi-Fi adapter
+
+Use this when the robot is in access-point mode and you do not have Ethernet. The built-in Wi-Fi can keep the robot network active, while the USB Wi-Fi adapter connects to internet Wi-Fi as a second interface.
+
+Run this on the robot after plugging in the USB Wi-Fi adapter:
+
+```bash
+lsusb
+nmcli device status
+ip link
+```
+
+Good sign:
+
+```text
+wlan0  wifi  connected
+wlan1  wifi  disconnected
+```
+
+Then connect `wlan1` to Wi-Fi:
+
+```bash
+sudo nmcli device wifi list ifname wlan1
+sudo nmcli device wifi connect "WiFiName" password "WiFiPassword" ifname wlan1
+```
+
 ### Laptop: first build and sync
 
 Run this from your laptop:
