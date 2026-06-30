@@ -616,6 +616,67 @@ Other options:
 - Label Studio: flexible, but more general-purpose than needed for simple YOLO boxes.
 - labelImg: simple, but no longer actively developed; use it only if you want a very lightweight local tool.
 
+### Laptop: label YOLO images with CVAT
+
+Run this on the laptop to start CVAT from the clone inside this project:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
+
+docker compose up -d
+docker exec -it cvat_server bash -ic 'python3 ~/manage.py createsuperuser'
+```
+
+Open CVAT:
+
+```text
+http://localhost:8080
+```
+
+Create upload ZIP files for the train and validation images:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p /tmp/sortibot_cvat_uploads
+
+(cd datasets/sortibot_detector/images/train && zip -r /tmp/sortibot_cvat_uploads/sortibot_train_images.zip .)
+(cd datasets/sortibot_detector/images/val && zip -r /tmp/sortibot_cvat_uploads/sortibot_val_images.zip .)
+```
+
+In CVAT:
+
+```text
+1. Create a project or task.
+2. Add one label: floor_object.
+3. Create one task for train images and upload /tmp/sortibot_cvat_uploads/sortibot_train_images.zip.
+4. Create one task for val images and upload /tmp/sortibot_cvat_uploads/sortibot_val_images.zip.
+5. Draw one bounding box around each object.
+6. Export annotations in YOLO format.
+```
+
+After exporting from CVAT, copy the exported `.txt` label files into the matching folder:
+
+```text
+train export .txt files -> datasets/sortibot_detector/labels/train/
+val export .txt files   -> datasets/sortibot_detector/labels/val/
+```
+
+The label filenames must match the image filenames:
+
+```text
+datasets/sortibot_detector/images/train/20260619_155110_064113.jpg
+datasets/sortibot_detector/labels/train/20260619_155110_064113.txt
+```
+
+Stop CVAT when you are done:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
+
+docker compose down
+```
+
 Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `datasets/sortibot_detector/data.yaml`, with:
 
 ```yaml
