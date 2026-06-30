@@ -647,9 +647,23 @@ Other options:
 Run this on the laptop to start CVAT from the clone inside this project:
 
 ```bash
+open -a Docker
+```
+
+Wait until Docker Desktop fully starts. It can take 30-90 seconds.
+
+Check that Docker is running:
+
+```bash
+docker info
+```
+
+If it prints system info, Docker is running. Then start CVAT:
+
+```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
 
-docker compose up -d
+docker-compose up -d
 docker exec -it cvat_server bash -ic 'python3 ~/manage.py createsuperuser'
 ```
 
@@ -700,7 +714,7 @@ Stop CVAT when you are done:
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
 
-docker compose down
+docker-compose down
 ```
 
 Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `datasets/sortibot_detector/data.yaml`, with:
