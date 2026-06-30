@@ -35,7 +35,7 @@ Web-dashboard/data/
 Web-dashboard/backend/data/
 Robot-Code_SUTD_RA_Design_Project/logs/
 Robot-Code_SUTD_RA_Design_Project/data/
-datasets/
+yolo_dataset/
 *.log
 
 # ML artifacts and model caches

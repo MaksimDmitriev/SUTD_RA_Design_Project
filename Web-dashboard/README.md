@@ -571,22 +571,22 @@ Create the YOLO dataset folders:
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 
-mkdir -p datasets/sortibot_detector/images/train
-mkdir -p datasets/sortibot_detector/images/val
-mkdir -p datasets/sortibot_detector/labels/train
-mkdir -p datasets/sortibot_detector/labels/val
+mkdir -p yolo_dataset/sortibot_detector/images/train
+mkdir -p yolo_dataset/sortibot_detector/images/val
+mkdir -p yolo_dataset/sortibot_detector/labels/train
+mkdir -p yolo_dataset/sortibot_detector/labels/val
 ```
 
 Save this file as:
 
 ```text
-datasets/sortibot_detector/data.yaml
+yolo_dataset/sortibot_detector/data.yaml
 ```
 
 File content:
 
 ```yaml
-path: datasets/sortibot_detector
+path: yolo_dataset/sortibot_detector
 train: images/train
 val: images/val
 names:
@@ -598,9 +598,9 @@ names:
 Copy selected images from the pulled capture folders into the YOLO dataset:
 
 ```text
-Web-dashboard/data/trash/   -> datasets/sortibot_detector/images/train or images/val
-Web-dashboard/data/keep/    -> datasets/sortibot_detector/images/train or images/val
-Web-dashboard/data/ignore/  -> datasets/sortibot_detector/images/train or images/val
+Web-dashboard/data/trash/   -> yolo_dataset/sortibot_detector/images/train or images/val
+Web-dashboard/data/keep/    -> yolo_dataset/sortibot_detector/images/train or images/val
+Web-dashboard/data/ignore/  -> yolo_dataset/sortibot_detector/images/train or images/val
 ```
 
 Use this split:
@@ -614,11 +614,11 @@ Use this split:
 Example:
 
 ```text
-datasets/sortibot_detector/images/train/wrapper_001.jpg
-datasets/sortibot_detector/labels/train/wrapper_001.txt
+yolo_dataset/sortibot_detector/images/train/wrapper_001.jpg
+yolo_dataset/sortibot_detector/labels/train/wrapper_001.txt
 
-datasets/sortibot_detector/images/val/toy_car_001.jpg
-datasets/sortibot_detector/labels/val/toy_car_001.txt
+yolo_dataset/sortibot_detector/images/val/toy_car_001.jpg
+yolo_dataset/sortibot_detector/labels/val/toy_car_001.txt
 ```
 
 Each image must have a matching label file with the same base name:
@@ -680,8 +680,8 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 
 mkdir -p /tmp/sortibot_cvat_uploads
 
-(cd datasets/sortibot_detector/images/train && zip -r /tmp/sortibot_cvat_uploads/sortibot_train_images.zip .)
-(cd datasets/sortibot_detector/images/val && zip -r /tmp/sortibot_cvat_uploads/sortibot_val_images.zip .)
+(cd yolo_dataset/sortibot_detector/images/train && zip -r /tmp/sortibot_cvat_uploads/sortibot_train_images.zip .)
+(cd yolo_dataset/sortibot_detector/images/val && zip -r /tmp/sortibot_cvat_uploads/sortibot_val_images.zip .)
 ```
 
 In CVAT:
@@ -698,15 +698,15 @@ In CVAT:
 After exporting from CVAT, copy the exported `.txt` label files into the matching folder:
 
 ```text
-train export .txt files -> datasets/sortibot_detector/labels/train/
-val export .txt files   -> datasets/sortibot_detector/labels/val/
+train export .txt files -> yolo_dataset/sortibot_detector/labels/train/
+val export .txt files   -> yolo_dataset/sortibot_detector/labels/val/
 ```
 
 The label filenames must match the image filenames:
 
 ```text
-datasets/sortibot_detector/images/train/20260619_155110_064113.jpg
-datasets/sortibot_detector/labels/train/20260619_155110_064113.txt
+yolo_dataset/sortibot_detector/images/train/20260619_155110_064113.jpg
+yolo_dataset/sortibot_detector/labels/train/20260619_155110_064113.txt
 ```
 
 Stop CVAT when you are done:
@@ -717,7 +717,7 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
 docker-compose down
 ```
 
-Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `datasets/sortibot_detector/data.yaml`, with:
+Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `yolo_dataset/sortibot_detector/data.yaml`, with:
 
 ```yaml
 names:
@@ -730,7 +730,7 @@ For the current stage, keep one class named `floor_object` because OpenCLIP will
 
 ### Laptop: back up YOLO dataset
 
-Run this on the laptop after creating or updating the YOLO dataset. It mirrors `datasets/sortibot_detector/` into `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET` and removes files from the destination that no longer exist in the local dataset.
+Run this on the laptop after creating or updating the YOLO dataset. It mirrors `yolo_dataset/sortibot_detector/` into `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET` and removes files from the destination that no longer exist in the local dataset.
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -738,7 +738,7 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 mkdir -p "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"
 
 rsync -av --delete \
-  datasets/sortibot_detector/ \
+  yolo_dataset/sortibot_detector/ \
   "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"/
 ```
 
@@ -754,7 +754,7 @@ python -m pip install ultralytics
 
 yolo detect train \
   model=yolo26n.pt \
-  data=datasets/sortibot_detector/data.yaml \
+  data=yolo_dataset/sortibot_detector/data.yaml \
   imgsz=640 \
   epochs=80 \
   batch=8 \
@@ -769,7 +769,7 @@ On an Apple Silicon laptop, you can try:
 ```bash
 yolo detect train \
   model=yolo26n.pt \
-  data=datasets/sortibot_detector/data.yaml \
+  data=yolo_dataset/sortibot_detector/data.yaml \
   imgsz=640 \
   epochs=80 \
   batch=8 \
@@ -790,7 +790,7 @@ source .yolo-train-venv/bin/activate
 
 yolo detect val \
   model=runs/sortibot/floor_object_detector/weights/best.pt \
-  data=datasets/sortibot_detector/data.yaml \
+  data=yolo_dataset/sortibot_detector/data.yaml \
   imgsz=640
 
 yolo export \
