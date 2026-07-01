@@ -1,0 +1,136 @@
+import importlib
+import os
+import shlex
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Protocol
+
+
+class MotionBackend(Protocol):
+    name: str
+
+    def forward(self) -> None:
+        ...
+
+    def stop(self) -> None:
+        ...
+
+
+@dataclass
+class DryRunMotion:
+    name: str = "dry-run"
+
+    def forward(self) -> None:
+        print("[motion] dry-run forward")
+
+    def stop(self) -> None:
+        print("[motion] dry-run stop")
+
+
+class ShellMotion:
+    name = "shell"
+
+    def __init__(self, forward_cmd: str, stop_cmd: str):
+        self.forward_cmd = forward_cmd
+        self.stop_cmd = stop_cmd
+        self._process: subprocess.Popen | None = None
+
+    def forward(self) -> None:
+        print(f"[motion] shell forward: {self.forward_cmd}")
+        self._process = subprocess.Popen(shlex.split(self.forward_cmd))
+
+    def stop(self) -> None:
+        print(f"[motion] shell stop: {self.stop_cmd}")
+        if self._process is not None and self._process.poll() is None:
+            self._process.terminate()
+        subprocess.run(shlex.split(self.stop_cmd), check=False)
+
+
+class HiwonderMecanumMotion:
+    name = "hiwonder-mecanum"
+
+    def __init__(self, chassis, speed: int, direction: int):
+        self.chassis = chassis
+        self.speed = speed
+        self.direction = direction
+
+    def forward(self) -> None:
+        print(
+            f"[motion] hiwonder forward speed={self.speed} "
+            f"direction={self.direction}"
+        )
+        self.chassis.set_velocity(self.speed, self.direction, 0)
+
+    def stop(self) -> None:
+        print("[motion] hiwonder stop")
+        try:
+            self.chassis.set_velocity(0, self.direction, 0)
+        except TypeError:
+            self.chassis.set_velocity(0, 0, 0)
+
+
+def _load_hiwonder_backend(speed: int, direction: int) -> MotionBackend | None:
+    default_paths = [
+        "/home/pi/MasterPi",
+        "/home/pi/MasterPi/HiwonderSDK",
+        "/home/pi/MasterPi/Functions",
+    ]
+    extra_paths = os.environ.get("SORTIBOT_HIWONDER_PATHS", "")
+    for raw_path in [*default_paths, *extra_paths.split(":")]:
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        if path.exists() and str(path) not in sys.path:
+            sys.path.insert(0, str(path))
+
+    candidates = [
+        ("HiwonderSDK.mecanum", "MecanumChassis"),
+        ("hiwonder.mecanum", "MecanumChassis"),
+        ("hiwonder.MecanumControl", "MecanumChassis"),
+        ("MecanumControl", "MecanumChassis"),
+        ("mecanum", "MecanumChassis"),
+    ]
+
+    for module_name, class_name in candidates:
+        try:
+            module = importlib.import_module(module_name)
+            cls = getattr(module, class_name)
+            chassis = cls()
+            if not hasattr(chassis, "set_velocity"):
+                continue
+            print(f"[motion] loaded {module_name}.{class_name}")
+            return HiwonderMecanumMotion(chassis, speed=speed, direction=direction)
+        except Exception:
+            continue
+
+    return None
+
+
+def create_motion_backend(
+    mode: str = "auto",
+    speed: int = 35,
+    direction: int = 90,
+) -> MotionBackend:
+    if mode == "dry-run":
+        return DryRunMotion()
+
+    forward_cmd = os.environ.get("SORTIBOT_MOVE_FORWARD_CMD")
+    stop_cmd = os.environ.get("SORTIBOT_STOP_CMD")
+    if mode in {"auto", "shell"} and forward_cmd and stop_cmd:
+        return ShellMotion(forward_cmd=forward_cmd, stop_cmd=stop_cmd)
+
+    if mode in {"auto", "hiwonder"}:
+        backend = _load_hiwonder_backend(speed=speed, direction=direction)
+        if backend is not None:
+            return backend
+
+    if mode == "auto":
+        print("[motion] no motion backend found; using dry-run")
+        return DryRunMotion()
+
+    raise RuntimeError(
+        f"Motion backend '{mode}' is unavailable. "
+        "Use --motion dry-run or set SORTIBOT_MOVE_FORWARD_CMD and SORTIBOT_STOP_CMD."
+    )

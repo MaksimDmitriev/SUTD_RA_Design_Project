@@ -896,6 +896,20 @@ Do not install YOLO/Ultralytics before the CPU-only PyTorch step. Otherwise pip 
 
 ### Robot: quick YOLO model test
 
+Run this on the laptop first to copy the latest backend code to the robot:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+```
+
 Run this on the robot:
 
 ```bash
@@ -936,6 +950,63 @@ xyxy: tensor([], size=(0, 4))
 ```
 
 If you see an import error, model path error, or NCNN loading error, the runtime package or copied model folder is not set up correctly.
+
+### Robot: one-meter object search test
+
+This test drives forward, checks camera frames with YOLO, stops when a `floor_object` is detected, crops the detected box, then classifies the crop with OpenCLIP as `Trash`, `Keep`, or `Ignore`.
+
+Run this on the robot first without moving the motors:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_search_test.py --motion dry-run --max-seconds 5
+```
+
+Expected log with an object:
+
+```text
+[test] motion backend: dry-run
+[motion] dry-run forward
+[2026-07-01T15:10:30] detected floor_object confidence=0.856 box=(260, 178, 345, 265)
+[2026-07-01T15:10:30] detected Trash confidence=0.982 prompt='a photo of a plastic wrapper on the floor'
+```
+
+Expected log with no object:
+
+```text
+[test] motion backend: dry-run
+[motion] dry-run forward
+[test] no object detected
+```
+
+Then run the movement test on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_search_test.py \
+  --motion auto \
+  --distance-meters 1.0 \
+  --meters-per-second 0.20 \
+  --speed 35 \
+  --direction 90
+```
+
+The `1.0` meter distance is a timed estimate: `distance-meters / meters-per-second`. Adjust `--meters-per-second`, `--speed`, and `--direction` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
+
+If automatic Hiwonder motion loading does not work on the robot, use shell commands as a fallback:
+
+```bash
+export SORTIBOT_MOVE_FORWARD_CMD="replace-with-forward-command"
+export SORTIBOT_STOP_CMD="replace-with-stop-command"
+
+python object_search_test.py --motion shell --max-seconds 5
+```
+
+The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
 
 ### How to refresh the model after adding images
 
