@@ -753,12 +753,12 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install ultralytics
 
 yolo detect train \
-  model=yolo26n.pt \
-  data=yolo_dataset/sortibot_detector/data.yaml \
+  model=$PWD/yolo26n.pt \
+  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
   imgsz=640 \
   epochs=80 \
   batch=8 \
-  project=runs/sortibot \
+  project=$PWD/runs/sortibot \
   name=floor_object_detector
 ```
 
@@ -768,17 +768,42 @@ On an Apple Silicon laptop, you can try:
 
 ```bash
 yolo detect train \
-  model=yolo26n.pt \
-  data=yolo_dataset/sortibot_detector/data.yaml \
+  model=$PWD/yolo26n.pt \
+  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
   imgsz=640 \
   epochs=80 \
   batch=8 \
   device=mps \
-  project=runs/sortibot \
+  project=$PWD/runs/sortibot \
   name=floor_object_detector
 ```
 
+Observed training time on this dataset:
+
+```text
+80 epochs completed in 0.080 hours with MPS.
+80 epochs completed in 0.90 hours with CPU.
+```
+
 Training on the Raspberry Pi itself is not recommended. It is much slower and can fill the SD card. Train on the laptop or a cloud GPU, then copy only the exported model to the robot.
+
+### Laptop: back up YOLO training runs
+
+Do not save `runs/` inside `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET`. The dataset backup command uses `--delete`, so it should mirror only the dataset. Keep training outputs in a separate backup location.
+
+Run this on the laptop after training:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+: "${SUTD_RA_DESIGN_PROJECT_YOLO_RUNS:?Set SUTD_RA_DESIGN_PROJECT_YOLO_RUNS first}"
+
+mkdir -p "$SUTD_RA_DESIGN_PROJECT_YOLO_RUNS"
+
+rsync -av --delete \
+  runs/sortibot/ \
+  "$SUTD_RA_DESIGN_PROJECT_YOLO_RUNS"/
+```
 
 ### Laptop: validate and export for Raspberry Pi
 

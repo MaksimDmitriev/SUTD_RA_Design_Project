@@ -65,6 +65,7 @@ checkpoints/
 
 # Generated reports and exports
 outputs/
+runs/
 
 # Other projects 
 cvat/
