@@ -258,6 +258,23 @@ rsync -av --delete \
 
 If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pulling images unless you intentionally want your laptop copy to exactly match the robot copy.
 
+### Laptop: sync captured images to robot
+
+Run this on the laptop only if you want the robot image folder to exactly match your laptop copy:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  "$SUTD_RA_DESIGN_PROJECT_DATA"/ \
+  pi@192.168.149.1:~/Web-dashboard/data/
+```
+
+Only use `--delete` if you are sure the laptop copy is the source of truth.
+
 ## Development mode
 
 ### Robot or laptop: backend only
@@ -814,12 +831,14 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 source .yolo-train-venv/bin/activate
 
 yolo detect val \
-  model=runs/sortibot/floor_object_detector/weights/best.pt \
-  data=yolo_dataset/sortibot_detector/data.yaml \
-  imgsz=640
+  model=$PWD/runs/sortibot/floor_object_detector/weights/best.pt \
+  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
+  imgsz=640 \
+  project=$PWD/runs/sortibot \
+  name=floor_object_detector_val
 
 yolo export \
-  model=runs/sortibot/floor_object_detector/weights/best.pt \
+  model=$PWD/runs/sortibot/floor_object_detector/weights/best.pt \
   format=ncnn \
   imgsz=640
 ```
@@ -844,7 +863,7 @@ ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 \
 
 rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  runs/sortibot/floor_object_detector/weights/best_ncnn_model/ \
+  $PWD/runs/sortibot/floor_object_detector/weights/best_ncnn_model/ \
   pi@192.168.149.1:~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
 ```
 
