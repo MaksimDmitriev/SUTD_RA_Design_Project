@@ -5,6 +5,7 @@ from datetime import datetime
 from camera import Camera
 from clip_classifier import ClipClassifier
 from robot_motion import create_motion_backend
+from robot_sonar import SonarDistanceSensor
 from yolo_detector import YoloDetector, crop_detection
 
 
@@ -19,6 +20,18 @@ def parse_args():
     )
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument(
+        "--stop-distance-cm",
+        type=float,
+        default=None,
+        help="Use the ultrasonic sensor and stop only when an object is within this distance.",
+    )
+    parser.add_argument(
+        "--sonar-samples",
+        type=int,
+        default=3,
+        help="Number of ultrasonic readings to median-filter.",
+    )
     parser.add_argument("--distance-meters", type=float, default=1.0)
     parser.add_argument(
         "--meters-per-second",
@@ -67,6 +80,11 @@ def main() -> int:
     print("[test] loading OpenCLIP classifier")
     classifier = ClipClassifier()
     classifier.load()
+    sonar = None
+    if args.stop_distance_cm is not None:
+        print("[test] loading ultrasonic distance sensor")
+        sonar = SonarDistanceSensor()
+        sonar.load()
 
     motion = create_motion_backend(
         mode=args.motion,
@@ -85,9 +103,22 @@ def main() -> int:
             detections = detector.detect(frame)
 
             if detections:
-                motion.stop()
                 detected_at = datetime.now().isoformat(timespec="seconds")
                 detection = detections[0]
+                distance_cm = None
+
+                if sonar is not None:
+                    distance_cm = sonar.read_cm(samples=args.sonar_samples)
+                    print(
+                        f"[{detected_at}] detected {detection.label} "
+                        f"confidence={detection.confidence:.3f} "
+                        f"distance={distance_cm:.1f}cm"
+                    )
+                    if distance_cm > args.stop_distance_cm:
+                        time.sleep(args.poll_seconds)
+                        continue
+
+                motion.stop()
                 crop = crop_detection(frame, detection)
                 prediction = classifier.predict(crop)
                 label_title = prediction.label.title()
@@ -96,6 +127,11 @@ def main() -> int:
                     f"[{detected_at}] detected {detection.label} "
                     f"confidence={detection.confidence:.3f} box={detection.xyxy}"
                 )
+                if distance_cm is not None:
+                    print(
+                        f"[{detected_at}] stopped at distance={distance_cm:.1f}cm "
+                        f"threshold={args.stop_distance_cm:.1f}cm"
+                    )
                 print(
                     f"[{detected_at}] detected {label_title} "
                     f"confidence={prediction.confidence:.3f} "

@@ -1032,17 +1032,39 @@ python object_search_test.py \
   --motion auto \
   --distance-meters 1.0 \
   --meters-per-second 0.20 \
+  --stop-distance-cm 15 \
   --speed 35 \
   --direction 90
 ```
 
-The `1.0` meter distance is a timed estimate: `distance-meters / meters-per-second`. Adjust `--meters-per-second`, `--speed`, and `--direction` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
+The `1.0` meter distance is a timed maximum: `distance-meters / meters-per-second`. With `--stop-distance-cm 15`, the robot keeps moving after YOLO first sees an object, then stops when the ultrasonic sensor reports about `15 cm` or less. Start with `15` to `20 cm`; reduce toward `10 cm` only after it stops reliably.
+
+Adjust `--meters-per-second`, `--speed`, `--direction`, and `--stop-distance-cm` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
 
 You can also force the Hiwonder backend directly:
 
 ```bash
 python object_search_test.py --motion hiwonder --max-seconds 5
 ```
+
+Test the ultrasonic sensor by itself on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from robot_sonar import SonarDistanceSensor
+import time
+
+sensor = SonarDistanceSensor()
+for _ in range(10):
+    print(f"{sensor.read_cm():.1f} cm")
+    time.sleep(0.2)
+PY
+```
+
+The MasterPi sonar API returns millimeters. The SortiBot wrapper converts it to centimeters.
 
 If the script prints `motion backend: dry-run`, it did not find the robot motion API. Run this on the robot and inspect the import failures:
 
@@ -1062,16 +1084,16 @@ source .venv/bin/activate
 python -m pip install --no-cache-dir pyserial
 ```
 
-`--motion shell` is only for advanced fallback testing where you provide custom shell commands yourself. It will not work unless both environment variables are set:
+If the ultrasonic sensor fails with `ModuleNotFoundError("No module named 'smbus2'")`, install the I2C package in the robot venv:
 
 ```bash
-export SORTIBOT_MOVE_FORWARD_CMD="replace-with-forward-command"
-export SORTIBOT_STOP_CMD="replace-with-stop-command"
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
 
-python object_search_test.py --motion shell --max-seconds 5
+python -m pip install --no-cache-dir smbus2
 ```
 
-For the current MasterPi setup, prefer `--motion auto` or `--motion hiwonder`.
+For the current MasterPi setup, use `--motion auto` or `--motion hiwonder`.
 
 The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
 
