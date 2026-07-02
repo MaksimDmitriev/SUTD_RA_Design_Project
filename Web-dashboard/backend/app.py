@@ -7,9 +7,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
 from camera import Camera
 from clip_classifier import ClipClassifier
+from robot_arm import ArmController
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,12 +32,19 @@ app.add_middleware(
 
 camera = Camera()
 classifier = ClipClassifier()
+arm = ArmController()
 state = {
     "robot_state": "IDLE",
     "last_capture": None,
     "last_prediction": None,
     "last_error": None,
 }
+
+
+class ServoRequest(BaseModel):
+    servo_id: int = Field(ge=1, le=6)
+    angle: int = Field(ge=0, le=180)
+    duration_seconds: float = Field(default=0.35, ge=0.05, le=3.0)
 
 
 def set_state(robot_state: str, error: str | None = None) -> None:
@@ -106,6 +115,47 @@ def predict():
         state["last_prediction"] = payload
         set_state(result.label.upper())
         return payload
+    except Exception as exc:
+        set_state("ERROR", str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/arm/servo")
+def set_arm_servo(payload: ServoRequest):
+    try:
+        command = arm.set_servo_angle(
+            payload.servo_id,
+            payload.angle,
+            payload.duration_seconds,
+        )
+        set_state(f"SERVO_{command.servo_id}")
+        return {
+            "ok": True,
+            "servo_id": command.servo_id,
+            "angle": command.angle,
+            "pulse": command.pulse,
+        }
+    except Exception as exc:
+        set_state("ERROR", str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/arm/gripper/{state_name}")
+def set_gripper(state_name: str):
+    gripper_angles = {"open": 90, "close": 35}
+    if state_name not in gripper_angles:
+        raise HTTPException(status_code=400, detail="Use 'open' or 'close'.")
+
+    try:
+        command = arm.set_servo_angle(1, gripper_angles[state_name], 0.35)
+        set_state(f"GRIPPER_{state_name.upper()}")
+        return {
+            "ok": True,
+            "state": state_name,
+            "servo_id": command.servo_id,
+            "angle": command.angle,
+            "pulse": command.pulse,
+        }
     except Exception as exc:
         set_state("ERROR", str(exc))
         raise HTTPException(status_code=503, detail=str(exc)) from exc

@@ -187,9 +187,41 @@ source .venv/bin/activate
 python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
+### Laptop: open the website and internal dashboard
+
+Open these from your laptop while connected to the robot network:
+
+```text
+Front page:
+http://192.168.149.1:8000/
+
+Internal dashboard:
+http://192.168.149.1:8000/#dashboard
+```
+
+The dashboard is intentionally not linked from the front page because it is for local robot control only. If the website is deployed publicly, the dashboard API calls will not work unless the browser can still reach the robot backend.
+
+### Laptop: internal dashboard arm controls
+
+Open the internal dashboard from your laptop:
+
+```text
+http://192.168.149.1:8000/#dashboard
+```
+
+Use the **Arm control** panel to move the arm servos:
+
+- Servos `2`, `3`, `4`, `5`, and `6`: set an angle from `0` to `180` degrees, then press **Set**.
+- Gripper: press **Open gripper** or **Close gripper**. The gripper uses servo `1`.
+
+Start with small movements and keep one hand near the robot power switch. If the gripper direction or range is wrong, adjust the open/close angles in `backend/app.py`.
+
 ### Laptop: sync after changes
 
-After changing frontend or backend files, run this from your laptop:
+After changing frontend or backend files, run this from your laptop. This command block syncs both parts:
+
+- Frontend: builds React and copies `Web-dashboard/frontend/dist/` to the robot.
+- Backend: copies the Python backend files to the robot.
 
 ```bash
 cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
@@ -236,7 +268,11 @@ v4l2-ctl -d /dev/video0 \
 Open from your laptop while connected to the robot network:
 
 ```text
-http://192.168.149.1:8000
+Front page:
+http://192.168.149.1:8000/
+
+Internal dashboard:
+http://192.168.149.1:8000/#dashboard
 ```
 
 ### Laptop: pull captured images from robot
@@ -289,6 +325,8 @@ uvicorn app:app --reload --host 0.0.0.0 --port 8000
 
 ### Laptop: React dev server
 
+This is only for local frontend development on the laptop. For the robot workflow, use the `http://192.168.149.1:8000/` addresses above.
+
 Run this on the laptop:
 
 ```bash
@@ -297,7 +335,9 @@ npm install
 npm run dev -- --host 0.0.0.0
 ```
 
-Then open the Vite URL. API calls are proxied to `localhost:8000`.
+Then open the Vite URL printed by `npm run dev`. API calls are proxied to `127.0.0.1:8000`, so dashboard API calls only work if the FastAPI backend is also running on the same laptop.
+
+Do not use the laptop dev server for normal robot testing. Use `http://192.168.149.1:8000/` and `http://192.168.149.1:8000/#dashboard`.
 
 ## OpenCLIP deployment
 

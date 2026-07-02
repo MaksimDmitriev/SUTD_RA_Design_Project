@@ -362,6 +362,50 @@ dd {
   color: #a7b4ac;
 }
 
+.control-card {
+  display: grid;
+  gap: 14px;
+}
+
+.joint-list {
+  display: grid;
+  gap: 12px;
+}
+
+.joint-control {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 64px minmax(110px, 1fr) 58px 72px;
+}
+
+.joint-control label,
+.joint-control output {
+  color: #bac7bf;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.joint-control output {
+  text-align: right;
+}
+
+.joint-control input[type="range"] {
+  accent-color: #74d9b3;
+  width: 100%;
+}
+
+.joint-control button {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.gripper-controls {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+}
+
 dl {
   display: grid;
   gap: 12px;
@@ -464,6 +508,18 @@ dd {
   }
 
   .button-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .joint-control {
+    grid-template-columns: 1fr;
+  }
+
+  .joint-control output {
+    text-align: left;
+  }
+
+  .gripper-controls {
     grid-template-columns: 1fr;
   }
 }

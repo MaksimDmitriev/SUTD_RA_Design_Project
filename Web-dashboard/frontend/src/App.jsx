@@ -4,11 +4,13 @@ import {
   Camera,
   CircleStop,
   Gauge,
+  Hand,
   LayoutDashboard,
   Loader2,
   Recycle,
   Save,
   ShieldCheck,
+  SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -26,14 +28,30 @@ async function api(path, options) {
 }
 
 export default function App() {
-  const [view, setView] = useState("project");
+  const [view, setView] = useState(() =>
+    window.location.hash === "#dashboard" ? "dashboard" : "project",
+  );
+
+  useEffect(() => {
+    function syncHash() {
+      setView(window.location.hash === "#dashboard" ? "dashboard" : "project");
+    }
+
+    window.addEventListener("hashchange", syncHash);
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
+
+  function openProject() {
+    window.location.hash = "";
+    setView("project");
+  }
 
   return (
     <main className="page">
       {view === "project" ? (
-        <ProjectPage onOpenDashboard={() => setView("dashboard")} />
+        <ProjectPage />
       ) : (
-        <Dashboard onOpenProject={() => setView("project")} />
+        <Dashboard onOpenProject={openProject} />
       )}
     </main>
   );
@@ -62,7 +80,7 @@ function Nav({ active, onOpenProject, onOpenDashboard }) {
   );
 }
 
-function ProjectPage({ onOpenDashboard }) {
+function ProjectPage() {
   return (
     <>
       <header className="site-header">
@@ -70,7 +88,6 @@ function ProjectPage({ onOpenDashboard }) {
           <p className="eyebrow">SUTD RA design project</p>
           <h1>SortiBot</h1>
         </div>
-        <Nav active="project" onOpenProject={() => {}} onOpenDashboard={onOpenDashboard} />
       </header>
 
       <section className="hero">
@@ -84,10 +101,6 @@ function ProjectPage({ onOpenDashboard }) {
             ignore categories.
           </p>
           <div className="hero-actions">
-            <button className="primary" onClick={onOpenDashboard} type="button">
-              <LayoutDashboard size={18} />
-              Open dashboard
-            </button>
             <a className="text-link" href="#overview">
               View overview
               <ArrowRight size={16} />
@@ -150,6 +163,13 @@ function Dashboard({ onOpenProject }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(null);
   const [message, setMessage] = useState("");
+  const [jointAngles, setJointAngles] = useState({
+    2: 90,
+    3: 90,
+    4: 90,
+    5: 90,
+    6: 90,
+  });
 
   const streamUrl = useMemo(() => `${API_BASE}/api/stream.mjpg`, []);
 
@@ -186,6 +206,39 @@ function Dashboard({ onOpenProject }) {
     try {
       const result = await api("/api/predict", { method: "POST" });
       setMessage(`Prediction: ${result.label} (${Math.round(result.confidence * 100)}%)`);
+      await refreshStatus();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function setServo(servoId) {
+    const angle = jointAngles[servoId];
+    setBusy(`servo-${servoId}`);
+    setMessage("");
+    try {
+      const result = await api("/api/arm/servo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ servo_id: servoId, angle }),
+      });
+      setMessage(`Servo ${result.servo_id}: ${result.angle} deg`);
+      await refreshStatus();
+    } catch (error) {
+      setMessage(error.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function setGripper(nextState) {
+    setBusy(`gripper-${nextState}`);
+    setMessage("");
+    try {
+      const result = await api(`/api/arm/gripper/${nextState}`, { method: "POST" });
+      setMessage(`Gripper ${result.state}: ${result.angle} deg`);
       await refreshStatus();
     } catch (error) {
       setMessage(error.message);
@@ -252,6 +305,58 @@ function Dashboard({ onOpenProject }) {
                 <small>{prediction.prompt}</small>
               </div>
             )}
+          </section>
+
+          <section className="card control-card">
+            <h2>Arm control</h2>
+            <div className="joint-list">
+              {[2, 3, 4, 5, 6].map((servoId) => (
+                <div className="joint-control" key={servoId}>
+                  <label htmlFor={`servo-${servoId}`}>Servo {servoId}</label>
+                  <input
+                    id={`servo-${servoId}`}
+                    max="180"
+                    min="0"
+                    onChange={(event) =>
+                      setJointAngles((current) => ({
+                        ...current,
+                        [servoId]: Number(event.target.value),
+                      }))
+                    }
+                    type="range"
+                    value={jointAngles[servoId]}
+                  />
+                  <output>{jointAngles[servoId]} deg</output>
+                  <button
+                    onClick={() => setServo(servoId)}
+                    disabled={!!busy}
+                    type="button"
+                    title={`Set servo ${servoId} angle`}
+                  >
+                    <SlidersHorizontal size={16} />
+                    Set
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="gripper-controls">
+              <button
+                onClick={() => setGripper("open")}
+                disabled={!!busy}
+                type="button"
+              >
+                <Hand size={16} />
+                Open gripper
+              </button>
+              <button
+                onClick={() => setGripper("close")}
+                disabled={!!busy}
+                type="button"
+              >
+                <Hand size={16} />
+                Close gripper
+              </button>
+            </div>
           </section>
 
           <section className="card">
