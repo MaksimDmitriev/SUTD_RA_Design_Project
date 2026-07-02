@@ -1022,7 +1022,7 @@ Expected log with no object:
 [test] no object detected
 ```
 
-Then run the movement test on the robot:
+Then run the movement test on the robot. Use `--motion auto` for normal testing because it loads the MasterPi/Hiwonder mecanum API:
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -1037,6 +1037,12 @@ python object_search_test.py \
 ```
 
 The `1.0` meter distance is a timed estimate: `distance-meters / meters-per-second`. Adjust `--meters-per-second`, `--speed`, and `--direction` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
+
+You can also force the Hiwonder backend directly:
+
+```bash
+python object_search_test.py --motion hiwonder --max-seconds 5
+```
 
 If the script prints `motion backend: dry-run`, it did not find the robot motion API. Run this on the robot and inspect the import failures:
 
@@ -1056,7 +1062,7 @@ source .venv/bin/activate
 python -m pip install --no-cache-dir pyserial
 ```
 
-If automatic Hiwonder motion loading does not work on the robot, use shell commands as a fallback:
+`--motion shell` is only for advanced fallback testing where you provide custom shell commands yourself. It will not work unless both environment variables are set:
 
 ```bash
 export SORTIBOT_MOVE_FORWARD_CMD="replace-with-forward-command"
@@ -1064,6 +1070,8 @@ export SORTIBOT_STOP_CMD="replace-with-stop-command"
 
 python object_search_test.py --motion shell --max-seconds 5
 ```
+
+For the current MasterPi setup, prefer `--motion auto` or `--motion hiwonder`.
 
 The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
 

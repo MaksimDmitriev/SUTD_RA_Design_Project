@@ -158,7 +158,14 @@ def create_motion_backend(
         print("[motion] no motion backend found; using dry-run")
         return DryRunMotion()
 
+    if mode == "shell":
+        raise RuntimeError(
+            "Motion backend 'shell' needs both environment variables: "
+            "SORTIBOT_MOVE_FORWARD_CMD and SORTIBOT_STOP_CMD. "
+            "For the MasterPi robot, use --motion auto or --motion hiwonder."
+        )
+
     raise RuntimeError(
         f"Motion backend '{mode}' is unavailable. "
-        "Use --motion dry-run or set SORTIBOT_MOVE_FORWARD_CMD and SORTIBOT_STOP_CMD."
+        "Use --motion auto, --motion hiwonder, or --motion dry-run."
     )
