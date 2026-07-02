@@ -997,6 +997,24 @@ python object_search_test.py \
 
 The `1.0` meter distance is a timed estimate: `distance-meters / meters-per-second`. Adjust `--meters-per-second`, `--speed`, and `--direction` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
 
+If the script prints `motion backend: dry-run`, it did not find the robot motion API. Run this on the robot and inspect the import failures:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_search_test.py --motion auto --motion-debug --max-seconds 2
+```
+
+If the debug output includes `ModuleNotFoundError("No module named 'serial'")`, install the serial package in the robot venv:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -m pip install --no-cache-dir pyserial
+```
+
 If automatic Hiwonder motion loading does not work on the robot, use shell commands as a fallback:
 
 ```bash

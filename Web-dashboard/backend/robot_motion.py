@@ -71,11 +71,19 @@ class HiwonderMecanumMotion:
             self.chassis.set_velocity(0, 0, 0)
 
 
-def _load_hiwonder_backend(speed: int, direction: int) -> MotionBackend | None:
+def _load_hiwonder_backend(
+    speed: int,
+    direction: int,
+    debug: bool = False,
+) -> MotionBackend | None:
     default_paths = [
         "/home/pi/MasterPi",
+        "/home/pi/MasterPi/masterpi_sdk",
+        "/home/pi/MasterPi/masterpi_sdk/common_sdk",
+        "/home/pi/MasterPi/masterpi_sdk/common_sdk/common",
         "/home/pi/MasterPi/HiwonderSDK",
         "/home/pi/MasterPi/Functions",
+        "/home/pi/MasterPi/functions",
     ]
     extra_paths = os.environ.get("SORTIBOT_HIWONDER_PATHS", "")
     for raw_path in [*default_paths, *extra_paths.split(":")]:
@@ -84,25 +92,40 @@ def _load_hiwonder_backend(speed: int, direction: int) -> MotionBackend | None:
         path = Path(raw_path)
         if path.exists() and str(path) not in sys.path:
             sys.path.insert(0, str(path))
+            if debug:
+                print(f"[motion] added Python path: {path}")
+        elif debug:
+            print(f"[motion] Python path not found or already added: {path}")
 
     candidates = [
+        ("common.mecanum", "MecanumChassis"),
+        ("masterpi_sdk.common_sdk.common.mecanum", "MecanumChassis"),
         ("HiwonderSDK.mecanum", "MecanumChassis"),
         ("hiwonder.mecanum", "MecanumChassis"),
         ("hiwonder.MecanumControl", "MecanumChassis"),
         ("MecanumControl", "MecanumChassis"),
         ("mecanum", "MecanumChassis"),
+        ("MecanumChassis", "MecanumChassis"),
     ]
 
     for module_name, class_name in candidates:
         try:
+            if debug:
+                print(f"[motion] trying {module_name}.{class_name}")
             module = importlib.import_module(module_name)
             cls = getattr(module, class_name)
             chassis = cls()
             if not hasattr(chassis, "set_velocity"):
+                if debug:
+                    print(
+                        f"[motion] {module_name}.{class_name} has no set_velocity"
+                    )
                 continue
             print(f"[motion] loaded {module_name}.{class_name}")
             return HiwonderMecanumMotion(chassis, speed=speed, direction=direction)
-        except Exception:
+        except Exception as exc:
+            if debug:
+                print(f"[motion] failed {module_name}.{class_name}: {exc!r}")
             continue
 
     return None
@@ -112,6 +135,7 @@ def create_motion_backend(
     mode: str = "auto",
     speed: int = 35,
     direction: int = 90,
+    debug: bool = False,
 ) -> MotionBackend:
     if mode == "dry-run":
         return DryRunMotion()
@@ -122,7 +146,11 @@ def create_motion_backend(
         return ShellMotion(forward_cmd=forward_cmd, stop_cmd=stop_cmd)
 
     if mode in {"auto", "hiwonder"}:
-        backend = _load_hiwonder_backend(speed=speed, direction=direction)
+        backend = _load_hiwonder_backend(
+            speed=speed,
+            direction=direction,
+            debug=debug,
+        )
         if backend is not None:
             return backend
 

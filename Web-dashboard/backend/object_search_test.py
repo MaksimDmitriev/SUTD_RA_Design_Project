@@ -45,6 +45,11 @@ def parse_args():
         default=90,
         help="Hiwonder mecanum direction angle. Adjust if 90 is not forward.",
     )
+    parser.add_argument(
+        "--motion-debug",
+        action="store_true",
+        help="Print attempted motion imports and failures.",
+    )
     return parser.parse_args()
 
 
@@ -67,6 +72,7 @@ def main() -> int:
         mode=args.motion,
         speed=args.speed,
         direction=args.direction,
+        debug=args.motion_debug,
     )
     print(f"[test] motion backend: {motion.name}")
     print(f"[test] drive window: {drive_seconds:.2f}s")
