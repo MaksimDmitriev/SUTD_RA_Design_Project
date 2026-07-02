@@ -283,6 +283,7 @@ Run this on the robot or laptop:
 
 ```bash
 cd Web-dashboard/backend
+source .venv/bin/activate
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
