@@ -294,6 +294,19 @@ rsync -av --delete \
 
 If you did not set up the SSH key, remove the `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` line from the `rsync` command. Do not use `--delete` when pulling images unless you intentionally want your laptop copy to exactly match the robot copy.
 
+### Laptop: pull debug detection images from robot
+
+Debug detection images are stored on the robot under `~/Web-dashboard/data/debug_detections/`. Run this on the laptop:
+
+```bash
+mkdir -p $HOME/Desktop/sortibot_debug_detections
+
+rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  pi@192.168.149.1:~/Web-dashboard/data/debug_detections/ \
+  $HOME/Desktop/sortibot_debug_detections/
+```
+
 ### Laptop: sync captured images to robot
 
 Run this on the laptop only if you want the robot image folder to exactly match your laptop copy:
