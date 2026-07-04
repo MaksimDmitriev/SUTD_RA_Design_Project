@@ -1060,6 +1060,87 @@ You can also force the Hiwonder backend directly:
 python object_search_test.py --motion hiwonder --max-seconds 5
 ```
 
+### Robot: YOLO visual-servo approach test
+
+This is the recommended approach test after the ultrasonic distance and simple rectangle-size tests. It copies the Hiwonder color-tracking idea: YOLO finds the object, OpenCLIP classifies the crop, then the robot uses mecanum `translation(x, y)` commands to center and approach only if the object is `trash` or `keep`.
+
+The pickup zone is not a classifier decision. It is only the camera position where the gripper should be able to reach the already-classified object.
+
+Run this on the laptop first to copy the latest backend code to the robot:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+```
+
+Run this on the robot first without moving the motors:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_visual_servo_test.py \
+  --motion dry-run \
+  --max-seconds 5 \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections
+```
+
+Expected output is a stream of `no object visible`, `stabilizing`, `classified Trash/Keep/Ignore`, or `cmd=(x,y)` messages. If the object is `ignore`, the robot continues searching. If the object is `trash` or `keep`, the robot approaches until the object reaches the pickup zone.
+
+Then run this on the robot with the MasterPi motion backend:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_visual_servo_test.py \
+  --motion auto \
+  --max-seconds 12 \
+  --conf 0.25 \
+  --target-bottom-ratio 0.68 \
+  --x-deadband-ratio 0.06 \
+  --bottom-deadband-ratio 0.03 \
+  --search-y-speed 25 \
+  --max-x-speed 18 \
+  --max-y-speed 25 \
+  --stable-frames 3 \
+  --pickup-frames 2 \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections
+```
+
+Tune these values one at a time:
+
+- `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
+- `--search-y-speed`, `--max-y-speed`: decrease these if the robot overshoots the object.
+- `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
+- `--conf`: decrease only if YOLO often misses obvious objects; increase if it tracks floor texture or shadows.
+- `--ignore-cooldown-frames`: increase this if the same ignored object is classified repeatedly.
+
+If the script prints `no object visible` but the robot does not move, check the motion backend line. It must be `motion backend: hiwonder-mecanum`, not `dry-run`. If it is `hiwonder-mecanum` and still does not move, increase `--search-y-speed` to `35`.
+
+Do not add `--grab` until the stop position is repeatable. When the robot reliably stops in a grabbable position, test the fixed capture-coordinate grab:
+
+```bash
+python object_visual_servo_test.py \
+  --motion auto \
+  --max-seconds 12 \
+  --target-bottom-ratio 0.68 \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --grab \
+  --grab-x-cm 0 \
+  --grab-y-cm 16.5 \
+  --grab-z-cm 2
+```
+
+The default grab coordinate comes from the Hiwonder color-sorting sample capture point. It may need calibration on the real robot.
+
 Test the ultrasonic sensor by itself on the robot:
 
 ```bash

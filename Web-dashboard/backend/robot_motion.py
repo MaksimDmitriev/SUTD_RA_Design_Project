@@ -14,6 +14,9 @@ class MotionBackend(Protocol):
     def forward(self) -> None:
         ...
 
+    def translate(self, velocity_x: float, velocity_y: float) -> None:
+        ...
+
     def stop(self) -> None:
         ...
 
@@ -24,6 +27,9 @@ class DryRunMotion:
 
     def forward(self) -> None:
         print("[motion] dry-run forward")
+
+    def translate(self, velocity_x: float, velocity_y: float) -> None:
+        print(f"[motion] dry-run translate x={velocity_x:.1f} y={velocity_y:.1f}")
 
     def stop(self) -> None:
         print("[motion] dry-run stop")
@@ -40,6 +46,12 @@ class ShellMotion:
     def forward(self) -> None:
         print(f"[motion] shell forward: {self.forward_cmd}")
         self._process = subprocess.Popen(shlex.split(self.forward_cmd))
+
+    def translate(self, velocity_x: float, velocity_y: float) -> None:
+        raise RuntimeError(
+            "Shell motion only supports forward/stop. Use --motion auto or "
+            "--motion hiwonder for visual servoing."
+        )
 
     def stop(self) -> None:
         print(f"[motion] shell stop: {self.stop_cmd}")
@@ -62,6 +74,13 @@ class HiwonderMecanumMotion:
             f"direction={self.direction}"
         )
         self.chassis.set_velocity(self.speed, self.direction, 0)
+
+    def translate(self, velocity_x: float, velocity_y: float) -> None:
+        print(
+            f"[motion] hiwonder translate x={velocity_x:.1f} "
+            f"y={velocity_y:.1f}"
+        )
+        self.chassis.translation(float(velocity_x), float(velocity_y))
 
     def stop(self) -> None:
         print("[motion] hiwonder stop")
