@@ -7,6 +7,7 @@ import cv2
 
 from camera import Camera
 from clip_classifier import ClipClassifier
+from contrast_detector import ContrastBlobDetector
 from robot_ik import ArmCoordinate, KinematicsArm
 from robot_motion import create_motion_backend
 from yolo_detector import Detection, YoloDetector, crop_detection
@@ -15,17 +16,32 @@ from yolo_detector import Detection, YoloDetector, crop_detection
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Use YOLO visual servoing to center and approach an object, then classify "
-            "the crop. Optional grabbing uses MasterPi inverse kinematics."
+            "Use visual servoing to center and approach an object, then classify the "
+            "crop. Optional grabbing uses MasterPi inverse kinematics."
         )
+    )
+    parser.add_argument(
+        "--detector",
+        choices=["contrast", "yolo"],
+        default="contrast",
+        help="Object detector. contrast is recommended for non-light objects on a light floor.",
     )
     parser.add_argument(
         "--model",
         default="/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model",
-        help="Path to the YOLO NCNN model directory on the robot.",
+        help="Path to the old custom YOLO NCNN model directory on the robot.",
     )
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=640)
+    parser.add_argument("--contrast-min-area", type=float, default=120.0)
+    parser.add_argument("--contrast-max-area-ratio", type=float, default=0.18)
+    parser.add_argument("--contrast-lab-delta", type=float, default=22.0)
+    parser.add_argument("--contrast-min-saturation", type=int, default=35)
+    parser.add_argument("--contrast-dark-value", type=int, default=115)
+    parser.add_argument("--contrast-max-colored-value", type=int, default=245)
+    parser.add_argument("--contrast-process-width", type=int, default=320)
+    parser.add_argument("--contrast-roi-top-ratio", type=float, default=0.15)
+    parser.add_argument("--contrast-roi-bottom-ratio", type=float, default=0.95)
     parser.add_argument("--max-seconds", type=float, default=12.0)
     parser.add_argument("--poll-seconds", type=float, default=0.12)
     parser.add_argument(
@@ -51,7 +67,7 @@ def parse_args():
         "--target-bottom-ratio",
         type=float,
         default=0.68,
-        help="Stop when the bottom of the YOLO box reaches this frame height ratio.",
+        help="Stop when the bottom of the detected object box reaches this frame height ratio.",
     )
     parser.add_argument(
         "--x-deadband-ratio",
@@ -74,6 +90,14 @@ def parse_args():
         help="Frames to keep moving after an ignored object before classifying again.",
     )
     parser.add_argument(
+        "--approach-labels",
+        default="trash,keep",
+        help=(
+            "Comma-separated OpenCLIP labels that the robot should approach. "
+            "Use trash,keep,ignore while tuning movement with a test object."
+        ),
+    )
+    parser.add_argument(
         "--search-y-speed",
         type=float,
         default=25.0,
@@ -81,6 +105,20 @@ def parse_args():
     )
     parser.add_argument("--max-x-speed", type=float, default=18.0)
     parser.add_argument("--max-y-speed", type=float, default=16.0)
+    parser.add_argument(
+        "--uncentered-y-scale",
+        type=float,
+        default=0.0,
+        help=(
+            "Forward speed multiplier while the object is outside the horizontal "
+            "deadband. Use 0 to center first, then advance."
+        ),
+    )
+    parser.add_argument(
+        "--invert-x-control",
+        action="store_true",
+        help="Reverse left/right correction if the object moves farther from center.",
+    )
     parser.add_argument(
         "--kp-x",
         type=float,
@@ -99,6 +137,11 @@ def parse_args():
         help="Directory for annotated frames, for example ~/Web-dashboard/data/debug_detections.",
     )
     parser.add_argument(
+        "--debug-latest-frame",
+        default=None,
+        help="Overwrite this path with the latest annotated detection frame.",
+    )
+    parser.add_argument(
         "--grab",
         action="store_true",
         help="After non-ignore classification, run a simple IK grab sequence.",
@@ -106,7 +149,7 @@ def parse_args():
     parser.add_argument(
         "--use-camera-transform",
         action="store_true",
-        help="Convert YOLO pixel position to arm coordinates using MasterPi calibration.",
+        help="Convert detected pixel position to arm coordinates using MasterPi calibration.",
     )
     parser.add_argument("--grab-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-y-cm", type=float, default=16.5)
@@ -143,18 +186,23 @@ def detection_geometry(frame, detection: Detection, args):
 def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
     x_error = geometry["x_error_ratio"]
     bottom_error = geometry["bottom_error_ratio"]
+    centered = abs(x_error) <= args.x_deadband_ratio
 
-    if abs(x_error) <= args.x_deadband_ratio:
+    if centered:
         x_speed = 0.0
     else:
         # Positive x moves the chassis right in the Hiwonder translation API.
         x_speed = clamp(args.kp_x * x_error, -args.max_x_speed, args.max_x_speed)
+        if args.invert_x_control:
+            x_speed = -x_speed
 
     if bottom_error <= args.bottom_deadband_ratio:
         y_speed = 0.0
     else:
         # Positive y moves forward. Move slower as the object reaches the pickup line.
         y_speed = clamp(args.kp_y * bottom_error, 4.0, args.max_y_speed)
+        if not centered:
+            y_speed *= clamp(args.uncentered_y_scale, 0.0, 1.0)
 
     return x_speed, y_speed
 
@@ -213,13 +261,40 @@ def save_debug_frame(directory: str | None, frame, detection, geometry, text: st
     print(f"[debug] saved {output_dir / filename}")
 
 
+def save_latest_debug_frame(path: str | None, frame, detection, geometry, text: str) -> None:
+    if not path:
+        return
+    output_path = Path(path).expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(output_path), annotate_frame(frame, detection, geometry, text))
+
+
 def main() -> int:
     args = parse_args()
+    approach_labels = {
+        label.strip().lower()
+        for label in args.approach_labels.split(",")
+        if label.strip()
+    }
 
     print("[visual-servo] loading camera")
     camera = Camera()
-    print("[visual-servo] loading YOLO detector")
-    detector = YoloDetector(args.model, confidence=args.conf, image_size=args.imgsz)
+    if args.detector == "contrast":
+        print("[visual-servo] loading LAB/color contrast detector")
+        detector = ContrastBlobDetector(
+            min_area=args.contrast_min_area,
+            max_area_ratio=args.contrast_max_area_ratio,
+            lab_delta=args.contrast_lab_delta,
+            min_saturation=args.contrast_min_saturation,
+            max_colored_value=args.contrast_max_colored_value,
+            dark_value=args.contrast_dark_value,
+            process_width=args.contrast_process_width,
+            roi_top_ratio=args.contrast_roi_top_ratio,
+            roi_bottom_ratio=args.contrast_roi_bottom_ratio,
+        )
+    else:
+        print("[visual-servo] loading custom YOLO detector")
+        detector = YoloDetector(args.model, confidence=args.conf, image_size=args.imgsz)
     detector.load()
     print("[visual-servo] loading OpenCLIP classifier")
     classifier = ClipClassifier()
@@ -266,6 +341,18 @@ def main() -> int:
             stable_count += 1
             geometry = detection_geometry(frame, detection, args)
             x_speed, y_speed = command_from_geometry(geometry, args)
+            detection_text = (
+                f"{detection.label} {detection.confidence:.2f} "
+                f"xerr={geometry['x_error_ratio']:.2f} "
+                f"berr={geometry['bottom_error_ratio']:.2f}"
+            )
+            save_latest_debug_frame(
+                args.debug_latest_frame,
+                frame,
+                detection,
+                geometry,
+                detection_text,
+            )
 
             if ignore_cooldown > 0:
                 ignore_cooldown -= 1
@@ -304,8 +391,11 @@ def main() -> int:
                 )
                 print(f"[{detected_at}] scores={active_prediction.scores}")
 
-                if active_prediction.label == "ignore":
-                    print(f"[{detected_at}] ignore label; continuing search")
+                if active_prediction.label not in approach_labels:
+                    print(
+                        f"[{detected_at}] {active_prediction.label} label is not "
+                        f"in approach labels {sorted(approach_labels)}; continuing search"
+                    )
                     active_prediction = None
                     stable_count = 0
                     pickup_count = 0

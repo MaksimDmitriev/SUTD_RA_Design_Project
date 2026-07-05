@@ -9,18 +9,20 @@ Target robot behavior:
 ```text
 robot moves forward slowly
   -> camera sees possible object
-  -> YOLO detects object box
-  -> robot stops if box is inside the pickup/search zone
-  -> crop object from the frame
+  -> LAB/color contrast detection finds a tight non-floor blob
+  -> crop that blob from the frame
   -> OpenCLIP classifies crop as Trash / Keep / Ignore
-  -> robot decides: throw away, keep, or ignore
+  -> robot centers and approaches if the object is Trash or Keep
+  -> robot grabs only after the stop position is repeatable
 ```
 
 In this design:
 
-- YOLO answers: **where is the object?**
+- LAB/color contrast detection answers: **where is the non-floor object?**
 - OpenCLIP answers: **what kind of object is it semantically?**
 - The policy layer answers: **what should the robot do?**
+
+YOLO is still documented below as an optional detector/training path, but it is not the current default approach.
 
 ## Why FastAPI for the server
 
@@ -41,6 +43,9 @@ Web-dashboard/
     app.py
     camera.py
     clip_classifier.py
+    contrast_detector.py
+    object_visual_servo_test.py
+    test_contrast_detector_image.py
     requirements.txt
   frontend/
     package.json
@@ -468,7 +473,7 @@ sudo apt-get clean
 df -h
 ```
 
-Start with whole-frame classification or a fixed pickup-zone crop. Add YOLO later when you need bounding boxes.
+For the current approach, use LAB/color contrast detection to create a tight object crop before OpenCLIP classification. YOLO is optional later if the contrast assumption stops being true.
 
 ### How to improve OpenCLIP classification
 
@@ -560,14 +565,16 @@ If prompt tuning is not enough, do **not** fine-tune the full OpenCLIP model fir
 Recommended progression:
 
 1. Prompt tuning: fastest and easiest.
-2. YOLO crop before OpenCLIP: usually improves classification because background is removed.
+2. LAB/color contrast crop before OpenCLIP: usually improves classification because background is removed.
 3. Threshold/policy tuning: send low-confidence predictions to `ignore`.
 4. Train a small classifier on OpenCLIP embeddings using your captured folders.
 5. Full OpenCLIP fine-tuning: only if the previous steps fail and you have a much larger dataset.
 
 For the current robot, steps 1-3 are the right priority. Full OpenCLIP fine-tuning is heavy and not recommended on the Raspberry Pi.
 
-## YOLO detection and retraining workflow
+## Optional YOLO detection and retraining workflow
+
+This section is optional/reference. The current default approach is the LAB/color contrast visual-servo test below. Use this YOLO workflow only if the light-floor/non-light-object assumption is not enough, or if you later need a trained detector that works across more floor colors and object appearances.
 
 ### What YOLO should do in this project
 
@@ -1005,7 +1012,9 @@ xyxy: tensor([], size=(0, 4))
 
 If you see an import error, model path error, or NCNN loading error, the runtime package or copied model folder is not set up correctly.
 
-### Robot: one-meter object search test
+### Robot: legacy YOLO + ultrasonic one-meter object search test
+
+This is a legacy/reference test from the earlier implementation. It uses the custom YOLO model plus ultrasonic distance. The current recommended approach is the LAB/color contrast visual-servo test in the next section.
 
 This test drives forward, checks camera frames with YOLO, stops when a `floor_object` is detected, crops the detected box, then classifies the crop with OpenCLIP as `Trash`, `Keep`, or `Ignore`.
 
@@ -1060,9 +1069,9 @@ You can also force the Hiwonder backend directly:
 python object_search_test.py --motion hiwonder --max-seconds 5
 ```
 
-### Robot: YOLO visual-servo approach test
+### Robot: LAB/color contrast visual-servo approach test
 
-This is the recommended approach test after the ultrasonic distance and simple rectangle-size tests. It copies the Hiwonder color-tracking idea: YOLO finds the object, OpenCLIP classifies the crop, then the robot uses mecanum `translation(x, y)` commands to center and approach only if the object is `trash` or `keep`.
+This is the recommended approach for the current demo assumption: the floor is light, and target objects are darker or more saturated than the floor. The LAB/color contrast detector finds a compact non-floor blob, OpenCLIP classifies the crop as `trash`, `keep`, or `ignore`, then the robot uses mecanum `translation(x, y)` commands to center and approach only if the classification label is in `--approach-labels`.
 
 The pickup zone is not a classifier decision. It is only the camera position where the gripper should be able to reach the already-classified object.
 
@@ -1080,6 +1089,20 @@ rsync -av --delete \
   pi@192.168.149.1:~/Web-dashboard/backend/
 ```
 
+Optional but recommended: test the detector on a saved robot image before moving the robot:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+source .yolo-train-venv/bin/activate
+
+python Web-dashboard/backend/test_contrast_detector_image.py \
+  "$HOME/Desktop/debug_detections/latest.jpg" \
+  --output "$HOME/Desktop/debug_detections/latest.contrast.jpg" \
+  --mask-output "$HOME/Desktop/debug_detections/latest.mask.jpg"
+```
+
+Expected output is one or more detections with a tight box around the actual non-light object, not a large floor region.
+
 Run this on the robot first without moving the motors:
 
 ```bash
@@ -1089,10 +1112,12 @@ source .venv/bin/activate
 python object_visual_servo_test.py \
   --motion dry-run \
   --max-seconds 5 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections
+  --detector contrast \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
 
-Expected output is a stream of `no object visible`, `stabilizing`, `classified Trash/Keep/Ignore`, or `cmd=(x,y)` messages. If the object is `ignore`, the robot continues searching. If the object is `trash` or `keep`, the robot approaches until the object reaches the pickup zone.
+Expected output is a stream of `no object visible`, `stabilizing`, `classified Trash/Keep/Ignore`, or `cmd=(x,y)` messages. The robot approaches only when the OpenCLIP label is included in `--approach-labels`. Use `trash,keep,ignore` while tuning movement with test objects; use `trash,keep` for real behavior.
 
 Then run this on the robot with the MasterPi motion backend:
 
@@ -1103,24 +1128,35 @@ source .venv/bin/activate
 python object_visual_servo_test.py \
   --motion auto \
   --max-seconds 12 \
-  --conf 0.25 \
+  --detector contrast \
   --target-bottom-ratio 0.68 \
   --x-deadband-ratio 0.06 \
   --bottom-deadband-ratio 0.03 \
   --search-y-speed 25 \
   --max-x-speed 18 \
   --max-y-speed 25 \
+  --uncentered-y-scale 0 \
+  --approach-labels trash,keep,ignore \
   --stable-frames 3 \
   --pickup-frames 2 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
 
 Tune these values one at a time:
 
+- `--contrast-lab-delta`: lower it if objects are missed; raise it if floor texture is detected.
+- `--contrast-min-saturation`: lower it if colored objects are missed; raise it if floor texture is detected.
+- `--contrast-dark-value`: raise it if dark objects are missed; lower it if shadows are detected.
+- `--contrast-min-area`: lower it if small objects are missed; raise it if noise is detected.
+- `--contrast-max-area-ratio`: lower it if huge floor/background regions are detected.
+- `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
 - `--search-y-speed`, `--max-y-speed`: decrease these if the robot overshoots the object.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
-- `--conf`: decrease only if YOLO often misses obvious objects; increase if it tracks floor texture or shadows.
+- `--uncentered-y-scale`: keep this at `0` to center first, then drive forward. Increase slowly only if centering is reliable.
+- `--invert-x-control`: add this if the object moves farther from the center line while tracking.
+- `--approach-labels`: use `trash,keep,ignore` while tuning movement with a test object; use `trash,keep` for real behavior.
 - `--ignore-cooldown-frames`: increase this if the same ignored object is classified repeatedly.
 
 If the script prints `no object visible` but the robot does not move, check the motion backend line. It must be `motion backend: hiwonder-mecanum`, not `dry-run`. If it is `hiwonder-mecanum` and still does not move, increase `--search-y-speed` to `35`.
@@ -1131,8 +1167,10 @@ Do not add `--grab` until the stop position is repeatable. When the robot reliab
 python object_visual_servo_test.py \
   --motion auto \
   --max-seconds 12 \
+  --detector contrast \
   --target-bottom-ratio 0.68 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
   --grab \
   --grab-x-cm 0 \
   --grab-y-cm 16.5 \
@@ -1191,7 +1229,9 @@ For the current MasterPi setup, use `--motion auto` or `--motion hiwonder`.
 
 The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
 
-### How to refresh the model after adding images
+### How to refresh the optional YOLO model after adding images
+
+This applies only if you are using the optional YOLO path. The current LAB/color contrast detector does not require YOLO retraining; tune the `--contrast-*` parameters instead.
 
 When you capture more images:
 
