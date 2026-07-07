@@ -85,6 +85,24 @@ def parse_args():
         default=0.03,
         help="Allowed vertical stop-zone error before stop/grab.",
     )
+    parser.add_argument(
+        "--close-bottom-error-ratio",
+        type=float,
+        default=0.0,
+        help=(
+            "When bottom error is at or below this value, stop lateral correction. "
+            "0 means the object box has reached the target bottom line."
+        ),
+    )
+    parser.add_argument(
+        "--close-x-deadband-ratio",
+        type=float,
+        default=0.18,
+        help=(
+            "Allowed horizontal error once the object is already close. This prevents "
+            "the robot from strafing past the object while trying to center perfectly."
+        ),
+    )
     parser.add_argument("--stable-frames", type=int, default=3)
     parser.add_argument("--pickup-frames", type=int, default=2)
     parser.add_argument(
@@ -112,7 +130,7 @@ def parse_args():
     parser.add_argument(
         "--uncentered-y-scale",
         type=float,
-        default=0.0,
+        default=0.35,
         help=(
             "Forward speed multiplier while the object is outside the horizontal "
             "deadband. Use 0 to center first, then advance."
@@ -192,6 +210,9 @@ def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
     bottom_error = geometry["bottom_error_ratio"]
     centered = abs(x_error) <= args.x_deadband_ratio
 
+    if bottom_error <= args.close_bottom_error_ratio:
+        return 0.0, 0.0
+
     if centered:
         x_speed = 0.0
     else:
@@ -212,10 +233,14 @@ def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
 
 
 def is_pickup_ready(geometry: dict, args) -> bool:
-    return (
-        abs(geometry["x_error_ratio"]) <= args.x_deadband_ratio
-        and geometry["bottom_error_ratio"] <= args.bottom_deadband_ratio
-    )
+    if geometry["bottom_error_ratio"] > args.bottom_deadband_ratio:
+        return False
+
+    x_deadband = args.x_deadband_ratio
+    if geometry["bottom_error_ratio"] <= args.close_bottom_error_ratio:
+        x_deadband = max(x_deadband, args.close_x_deadband_ratio)
+
+    return abs(geometry["x_error_ratio"]) <= x_deadband
 
 
 def annotate_frame(frame, detection: Detection, geometry: dict, text: str):

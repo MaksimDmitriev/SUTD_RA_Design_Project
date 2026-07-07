@@ -1132,10 +1132,12 @@ python object_visual_servo_test.py \
   --target-bottom-ratio 0.68 \
   --x-deadband-ratio 0.06 \
   --bottom-deadband-ratio 0.03 \
+  --close-bottom-error-ratio 0.0 \
+  --close-x-deadband-ratio 0.18 \
   --search-y-speed 25 \
   --max-x-speed 18 \
   --max-y-speed 25 \
-  --uncentered-y-scale 0 \
+  --uncentered-y-scale 0.35 \
   --approach-labels trash,keep,ignore \
   --stable-frames 3 \
   --pickup-frames 2 \
@@ -1157,7 +1159,9 @@ Tune these values one at a time:
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
 - `--search-y-speed`, `--max-y-speed`: decrease these if the robot overshoots the object.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
-- `--uncentered-y-scale`: keep this at `0` to center first, then drive forward. Increase slowly only if centering is reliable.
+- `--close-bottom-error-ratio`: keep this at `0.0` so the robot stops lateral correction once the object reaches the stop line.
+- `--close-x-deadband-ratio`: increase this if the robot reaches the object but keeps strafing past it instead of stopping.
+- `--uncentered-y-scale`: use `0.35` so the robot creeps forward while correcting left/right. If this is `0`, the robot tries pure sideways centering first; on some floors this can look like the robot detected the object but did not move.
 - `--invert-x-control`: add this if the object moves farther from the center line while tracking.
 - `--approach-labels`: use `trash,keep,ignore` while tuning movement with a test object; use `trash,keep` for real behavior.
 - `--ignore-cooldown-frames`: increase this if the same ignored object is classified repeatedly.
