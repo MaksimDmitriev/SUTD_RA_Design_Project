@@ -47,6 +47,7 @@ Web-dashboard/
     object_visual_servo_test.py
     test_contrast_detector_image.py
     requirements.txt
+    requirements-openclip.txt
   frontend/
     package.json
     index.html
@@ -139,6 +140,7 @@ rsync -av --delete \
   --exclude "__pycache__" \
   --exclude ".venv" \
   --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
@@ -181,6 +183,17 @@ The package installation order matters:
 4. Install OpenCLIP support packages from `requirements-openclip.txt`.
 
 Do not install `torch torchvision open_clip_torch` directly from the default PyPI index on the Raspberry Pi. That can pull large CUDA/NVIDIA packages and fill the SD card.
+
+Verify the imports before starting the backend or robot movement scripts:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -c "import cv2; import fastapi; import numpy; import PIL; import serial; import smbus2; import torch; import torchvision; import open_clip; print('robot Python deps OK')"
+```
+
+If this command fails with `ModuleNotFoundError`, stay in this section and reinstall the missing requirement on the robot. Do not fix it by copying a laptop `.venv`.
 
 ### Robot: start backend
 
@@ -242,6 +255,7 @@ rsync -av --delete \
   --exclude "__pycache__" \
   --exclude ".venv" \
   --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 
@@ -536,6 +550,7 @@ rsync -av --delete \
   --exclude "__pycache__" \
   --exclude ".venv" \
   --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 ```
@@ -967,6 +982,7 @@ rsync -av --delete \
   --exclude "__pycache__" \
   --exclude ".venv" \
   --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 ```
@@ -1085,6 +1101,7 @@ rsync -av --delete \
   --exclude "__pycache__" \
   --exclude ".venv" \
   --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
 ```
