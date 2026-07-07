@@ -1096,9 +1096,9 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
 source .yolo-train-venv/bin/activate
 
 python Web-dashboard/backend/test_contrast_detector_image.py \
-  "$HOME/Desktop/debug_detections/latest.jpg" \
-  --output "$HOME/Desktop/debug_detections/latest.contrast.jpg" \
-  --mask-output "$HOME/Desktop/debug_detections/latest.mask.jpg"
+  "$HOME/Desktop/sortibot_debug_detections/latest.jpg" \
+  --output "$HOME/Desktop/sortibot_debug_detections/latest.contrast.jpg" \
+  --mask-output "$HOME/Desktop/sortibot_debug_detections/latest.mask.jpg"
 ```
 
 Expected output is one or more detections with a tight box around the actual non-light object, not a large floor region.
@@ -1145,12 +1145,15 @@ python object_visual_servo_test.py \
 
 Tune these values one at a time:
 
-- `--contrast-lab-delta`: lower it if objects are missed; raise it if floor texture is detected.
+- `--contrast-use-lab`: leave this off on rough/textured floors. LAB contrast can treat normal floor texture as an object. Use it only on smoother floors.
+- `--contrast-lab-delta`: only matters when `--contrast-use-lab` is enabled. Lower it if objects are missed; raise it if floor texture is detected.
 - `--contrast-min-saturation`: lower it if colored objects are missed; raise it if floor texture is detected.
 - `--contrast-dark-value`: raise it if dark objects are missed; lower it if shadows are detected.
 - `--contrast-min-area`: lower it if small objects are missed; raise it if noise is detected.
 - `--contrast-max-area-ratio`: lower it if huge floor/background regions are detected.
+- `--contrast-max-box-width-ratio`, `--contrast-max-box-height-ratio`: lower these if the detector draws wide boxes over the floor instead of a compact object.
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
+- `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
 - `--search-y-speed`, `--max-y-speed`: decrease these if the robot overshoots the object.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.

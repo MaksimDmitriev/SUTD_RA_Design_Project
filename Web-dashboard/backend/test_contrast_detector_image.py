@@ -12,15 +12,19 @@ def parse_args():
         description="Run the LAB/color contrast detector on one saved robot camera image."
     )
     parser.add_argument("image", help="Path to a saved robot camera image.")
-    parser.add_argument("--min-area", type=float, default=120.0)
-    parser.add_argument("--max-area-ratio", type=float, default=0.18)
-    parser.add_argument("--lab-delta", type=float, default=22.0)
-    parser.add_argument("--min-saturation", type=int, default=35)
-    parser.add_argument("--dark-value", type=int, default=115)
+    parser.add_argument("--min-area", type=float, default=45.0)
+    parser.add_argument("--max-area-ratio", type=float, default=0.04)
+    parser.add_argument("--lab-delta", type=float, default=45.0)
+    parser.add_argument("--min-saturation", type=int, default=55)
+    parser.add_argument("--dark-value", type=int, default=70)
     parser.add_argument("--max-colored-value", type=int, default=245)
+    parser.add_argument("--use-lab", action="store_true")
     parser.add_argument("--process-width", type=int, default=320)
     parser.add_argument("--roi-top-ratio", type=float, default=0.15)
-    parser.add_argument("--roi-bottom-ratio", type=float, default=0.95)
+    parser.add_argument("--roi-bottom-ratio", type=float, default=0.82)
+    parser.add_argument("--max-box-width-ratio", type=float, default=0.38)
+    parser.add_argument("--max-box-height-ratio", type=float, default=0.34)
+    parser.add_argument("--box-padding-ratio", type=float, default=0.25)
     parser.add_argument("--target-x-ratio", type=float, default=0.50)
     parser.add_argument("--target-bottom-ratio", type=float, default=0.68)
     parser.add_argument(
@@ -49,9 +53,13 @@ def main() -> int:
         min_saturation=args.min_saturation,
         max_colored_value=args.max_colored_value,
         dark_value=args.dark_value,
+        use_lab_contrast=args.use_lab,
         process_width=args.process_width,
         roi_top_ratio=args.roi_top_ratio,
         roi_bottom_ratio=args.roi_bottom_ratio,
+        max_box_width_ratio=args.max_box_width_ratio,
+        max_box_height_ratio=args.max_box_height_ratio,
+        box_padding_ratio=args.box_padding_ratio,
     )
     detections = detector.detect(frame)
     print(f"detections={len(detections)}")

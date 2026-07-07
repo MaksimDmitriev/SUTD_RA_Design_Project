@@ -9,15 +9,19 @@ from yolo_detector import Detection
 class ContrastBlobDetector:
     def __init__(
         self,
-        min_area: float = 120.0,
-        max_area_ratio: float = 0.18,
-        lab_delta: float = 22.0,
-        min_saturation: int = 35,
-        dark_value: int = 115,
+        min_area: float = 45.0,
+        max_area_ratio: float = 0.04,
+        lab_delta: float = 45.0,
+        min_saturation: int = 55,
+        dark_value: int = 70,
         max_colored_value: int = 245,
+        use_lab_contrast: bool = False,
         process_width: int = 320,
         roi_top_ratio: float = 0.15,
-        roi_bottom_ratio: float = 0.95,
+        roi_bottom_ratio: float = 0.82,
+        max_box_width_ratio: float = 0.38,
+        max_box_height_ratio: float = 0.34,
+        box_padding_ratio: float = 0.25,
     ):
         self.min_area = min_area
         self.max_area_ratio = max_area_ratio
@@ -25,9 +29,13 @@ class ContrastBlobDetector:
         self.min_saturation = min_saturation
         self.dark_value = dark_value
         self.max_colored_value = max_colored_value
+        self.use_lab_contrast = use_lab_contrast
         self.process_width = process_width
         self.roi_top_ratio = roi_top_ratio
         self.roi_bottom_ratio = roi_bottom_ratio
+        self.max_box_width_ratio = max_box_width_ratio
+        self.max_box_height_ratio = max_box_height_ratio
+        self.box_padding_ratio = box_padding_ratio
 
     def load(self) -> None:
         return
@@ -62,6 +70,11 @@ class ContrastBlobDetector:
             if width <= 1 or height <= 1:
                 continue
 
+            if width / self.process_width > self.max_box_width_ratio:
+                continue
+            if height / process_h > self.max_box_height_ratio:
+                continue
+
             aspect = width / height
             if aspect > 6.0 or aspect < 0.15:
                 continue
@@ -70,14 +83,16 @@ class ContrastBlobDetector:
             if extent < 0.12:
                 continue
 
-            x1 = max(0, min(original_w - 1, int(round(x * scale_x))))
-            y1 = max(0, min(original_h - 1, int(round(y * scale_y))))
-            x2 = max(0, min(original_w, int(round((x + width) * scale_x))))
-            y2 = max(0, min(original_h, int(round((y + height) * scale_y))))
+            padding_x = int(round(width * self.box_padding_ratio))
+            padding_y = int(round(height * self.box_padding_ratio))
+            x1 = max(0, min(original_w - 1, int(round((x - padding_x) * scale_x))))
+            y1 = max(0, min(original_h - 1, int(round((y - padding_y) * scale_y))))
+            x2 = max(0, min(original_w, int(round((x + width + padding_x) * scale_x))))
+            y2 = max(0, min(original_h, int(round((y + height + padding_y) * scale_y))))
             if x2 <= x1 or y2 <= y1:
                 continue
 
-            score = min(1.0, max(0.05, area / max(self.min_area * 4.0, 1.0)))
+            score = self._score_contour(mask, contour, x, y, width, height)
             detections.append(
                 Detection(
                     xyxy=(x1, y1, x2, y2),
@@ -97,19 +112,21 @@ class ContrastBlobDetector:
         height, width = frame_bgr.shape[:2]
         blurred = cv2.GaussianBlur(frame_bgr, (5, 5), 0)
 
-        lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB).astype(np.float32)
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         saturation = hsv[:, :, 1]
         value = hsv[:, :, 2]
 
-        floor_lab = self._estimate_floor_lab(lab)
-        lab_distance = np.linalg.norm(lab - floor_lab, axis=2)
-
-        lab_contrast = lab_distance >= self.lab_delta
         colored = (saturation >= self.min_saturation) & (value <= self.max_colored_value)
         dark = value <= self.dark_value
+        foreground = colored | dark
 
-        mask = np.where(lab_contrast | colored | dark, 255, 0).astype(np.uint8)
+        if self.use_lab_contrast:
+            lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB).astype(np.float32)
+            floor_lab = self._estimate_floor_lab(lab)
+            lab_distance = np.linalg.norm(lab - floor_lab, axis=2)
+            foreground = foreground | (lab_distance >= self.lab_delta)
+
+        mask = np.where(foreground, 255, 0).astype(np.uint8)
 
         roi_top = int(height * self.roi_top_ratio)
         roi_bottom = int(height * self.roi_bottom_ratio)
@@ -118,8 +135,25 @@ class ContrastBlobDetector:
 
         kernel = np.ones((3, 3), np.uint8)
         mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
-        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+        close_kernel = np.ones((5, 5), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, close_kernel)
         return mask
+
+    @staticmethod
+    def _score_contour(
+        mask: np.ndarray,
+        contour: np.ndarray,
+        x: int,
+        y: int,
+        width: int,
+        height: int,
+    ) -> float:
+        area = float(cv2.contourArea(contour))
+        extent = area / max(float(width * height), 1.0)
+        local = mask[y : y + height, x : x + width]
+        fill_ratio = float(cv2.countNonZero(local)) / max(float(width * height), 1.0)
+        compactness = min(1.0, max(0.0, (extent + fill_ratio) / 2.0))
+        return min(1.0, max(0.05, compactness))
 
     @staticmethod
     def _estimate_floor_lab(lab: np.ndarray) -> np.ndarray:

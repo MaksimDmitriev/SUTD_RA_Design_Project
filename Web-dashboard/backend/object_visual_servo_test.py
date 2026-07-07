@@ -33,15 +33,19 @@ def parse_args():
     )
     parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument("--contrast-min-area", type=float, default=120.0)
-    parser.add_argument("--contrast-max-area-ratio", type=float, default=0.18)
-    parser.add_argument("--contrast-lab-delta", type=float, default=22.0)
-    parser.add_argument("--contrast-min-saturation", type=int, default=35)
-    parser.add_argument("--contrast-dark-value", type=int, default=115)
+    parser.add_argument("--contrast-min-area", type=float, default=45.0)
+    parser.add_argument("--contrast-max-area-ratio", type=float, default=0.04)
+    parser.add_argument("--contrast-lab-delta", type=float, default=45.0)
+    parser.add_argument("--contrast-min-saturation", type=int, default=55)
+    parser.add_argument("--contrast-dark-value", type=int, default=70)
     parser.add_argument("--contrast-max-colored-value", type=int, default=245)
+    parser.add_argument("--contrast-use-lab", action="store_true")
     parser.add_argument("--contrast-process-width", type=int, default=320)
     parser.add_argument("--contrast-roi-top-ratio", type=float, default=0.15)
-    parser.add_argument("--contrast-roi-bottom-ratio", type=float, default=0.95)
+    parser.add_argument("--contrast-roi-bottom-ratio", type=float, default=0.82)
+    parser.add_argument("--contrast-max-box-width-ratio", type=float, default=0.38)
+    parser.add_argument("--contrast-max-box-height-ratio", type=float, default=0.34)
+    parser.add_argument("--contrast-box-padding-ratio", type=float, default=0.25)
     parser.add_argument("--max-seconds", type=float, default=12.0)
     parser.add_argument("--poll-seconds", type=float, default=0.12)
     parser.add_argument(
@@ -288,9 +292,13 @@ def main() -> int:
             min_saturation=args.contrast_min_saturation,
             max_colored_value=args.contrast_max_colored_value,
             dark_value=args.contrast_dark_value,
+            use_lab_contrast=args.contrast_use_lab,
             process_width=args.contrast_process_width,
             roi_top_ratio=args.contrast_roi_top_ratio,
             roi_bottom_ratio=args.contrast_roi_bottom_ratio,
+            max_box_width_ratio=args.contrast_max_box_width_ratio,
+            max_box_height_ratio=args.contrast_max_box_height_ratio,
+            box_padding_ratio=args.contrast_box_padding_ratio,
         )
     else:
         print("[visual-servo] loading custom YOLO detector")
