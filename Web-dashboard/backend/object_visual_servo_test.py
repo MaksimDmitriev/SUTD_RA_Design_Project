@@ -40,6 +40,17 @@ def parse_args():
     parser.add_argument("--contrast-dark-value", type=int, default=70)
     parser.add_argument("--contrast-max-colored-value", type=int, default=245)
     parser.add_argument("--contrast-use-lab", action="store_true")
+    parser.add_argument(
+        "--contrast-color-mode",
+        choices=["blue", "all"],
+        default="blue",
+        help="Use blue to detect only blue objects. Use all for the old saturated/dark foreground detector.",
+    )
+    parser.add_argument("--contrast-blue-hue-min", type=int, default=90)
+    parser.add_argument("--contrast-blue-hue-max", type=int, default=135)
+    parser.add_argument("--contrast-blue-min-saturation", type=int, default=50)
+    parser.add_argument("--contrast-blue-min-value", type=int, default=35)
+    parser.add_argument("--contrast-blue-max-value", type=int, default=255)
     parser.add_argument("--contrast-process-width", type=int, default=320)
     parser.add_argument("--contrast-roi-top-ratio", type=float, default=0.15)
     parser.add_argument("--contrast-roi-bottom-ratio", type=float, default=0.82)
@@ -309,7 +320,7 @@ def main() -> int:
     print("[visual-servo] loading camera")
     camera = Camera()
     if args.detector == "contrast":
-        print("[visual-servo] loading LAB/color contrast detector")
+        print(f"[visual-servo] loading {args.contrast_color_mode} contrast detector")
         detector = ContrastBlobDetector(
             min_area=args.contrast_min_area,
             max_area_ratio=args.contrast_max_area_ratio,
@@ -318,6 +329,12 @@ def main() -> int:
             max_colored_value=args.contrast_max_colored_value,
             dark_value=args.contrast_dark_value,
             use_lab_contrast=args.contrast_use_lab,
+            color_mode=args.contrast_color_mode,
+            blue_hue_min=args.contrast_blue_hue_min,
+            blue_hue_max=args.contrast_blue_hue_max,
+            blue_min_saturation=args.contrast_blue_min_saturation,
+            blue_min_value=args.contrast_blue_min_value,
+            blue_max_value=args.contrast_blue_max_value,
             process_width=args.contrast_process_width,
             roi_top_ratio=args.contrast_roi_top_ratio,
             roi_bottom_ratio=args.contrast_roi_bottom_ratio,

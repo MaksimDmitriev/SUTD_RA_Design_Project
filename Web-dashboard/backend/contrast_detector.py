@@ -16,6 +16,12 @@ class ContrastBlobDetector:
         dark_value: int = 70,
         max_colored_value: int = 245,
         use_lab_contrast: bool = False,
+        color_mode: str = "blue",
+        blue_hue_min: int = 90,
+        blue_hue_max: int = 135,
+        blue_min_saturation: int = 50,
+        blue_min_value: int = 35,
+        blue_max_value: int = 255,
         process_width: int = 320,
         roi_top_ratio: float = 0.15,
         roi_bottom_ratio: float = 0.82,
@@ -23,6 +29,9 @@ class ContrastBlobDetector:
         max_box_height_ratio: float = 0.34,
         box_padding_ratio: float = 0.25,
     ):
+        if color_mode not in {"all", "blue"}:
+            raise ValueError("color_mode must be 'all' or 'blue'")
+
         self.min_area = min_area
         self.max_area_ratio = max_area_ratio
         self.lab_delta = lab_delta
@@ -30,6 +39,12 @@ class ContrastBlobDetector:
         self.dark_value = dark_value
         self.max_colored_value = max_colored_value
         self.use_lab_contrast = use_lab_contrast
+        self.color_mode = color_mode
+        self.blue_hue_min = blue_hue_min
+        self.blue_hue_max = blue_hue_max
+        self.blue_min_saturation = blue_min_saturation
+        self.blue_min_value = blue_min_value
+        self.blue_max_value = blue_max_value
         self.process_width = process_width
         self.roi_top_ratio = roi_top_ratio
         self.roi_bottom_ratio = roi_bottom_ratio
@@ -116,11 +131,20 @@ class ContrastBlobDetector:
         saturation = hsv[:, :, 1]
         value = hsv[:, :, 2]
 
-        colored = (saturation >= self.min_saturation) & (value <= self.max_colored_value)
-        dark = value <= self.dark_value
-        foreground = colored | dark
+        if self.color_mode == "blue":
+            hue = hsv[:, :, 0]
+            foreground = (
+                self._hue_mask(hue, self.blue_hue_min, self.blue_hue_max)
+                & (saturation >= self.blue_min_saturation)
+                & (value >= self.blue_min_value)
+                & (value <= self.blue_max_value)
+            )
+        else:
+            colored = (saturation >= self.min_saturation) & (value <= self.max_colored_value)
+            dark = value <= self.dark_value
+            foreground = colored | dark
 
-        if self.use_lab_contrast:
+        if self.use_lab_contrast and self.color_mode == "all":
             lab = cv2.cvtColor(blurred, cv2.COLOR_BGR2LAB).astype(np.float32)
             floor_lab = self._estimate_floor_lab(lab)
             lab_distance = np.linalg.norm(lab - floor_lab, axis=2)
@@ -164,6 +188,14 @@ class ContrastBlobDetector:
         right = lab[top:, width - strip :, :]
         samples = np.concatenate((left.reshape(-1, 3), right.reshape(-1, 3)), axis=0)
         return np.median(samples, axis=0)
+
+    @staticmethod
+    def _hue_mask(hue: np.ndarray, hue_min: int, hue_max: int) -> np.ndarray:
+        hue_min = int(np.clip(hue_min, 0, 179))
+        hue_max = int(np.clip(hue_max, 0, 179))
+        if hue_min <= hue_max:
+            return (hue >= hue_min) & (hue <= hue_max)
+        return (hue >= hue_min) | (hue <= hue_max)
 
     @staticmethod
     def _box_area(xyxy: tuple[int, int, int, int]) -> int:

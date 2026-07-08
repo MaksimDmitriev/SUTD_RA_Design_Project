@@ -1114,11 +1114,12 @@ source .yolo-train-venv/bin/activate
 
 python Web-dashboard/backend/test_contrast_detector_image.py \
   "$HOME/Desktop/sortibot_debug_detections/latest.jpg" \
+  --color-mode blue \
   --output "$HOME/Desktop/sortibot_debug_detections/latest.contrast.jpg" \
   --mask-output "$HOME/Desktop/sortibot_debug_detections/latest.mask.jpg"
 ```
 
-Expected output is one or more detections with a tight box around the actual non-light object, not a large floor region.
+Expected output is one or more detections with a tight box around the actual blue object, not a large floor region or non-blue object.
 
 Run this on the robot first without moving the motors:
 
@@ -1130,6 +1131,7 @@ python object_visual_servo_test.py \
   --motion dry-run \
   --max-seconds 5 \
   --detector contrast \
+  --contrast-color-mode blue \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
@@ -1146,6 +1148,7 @@ python object_visual_servo_test.py \
   --motion auto \
   --max-seconds 12 \
   --detector contrast \
+  --contrast-color-mode blue \
   --target-bottom-ratio 0.68 \
   --x-deadband-ratio 0.06 \
   --bottom-deadband-ratio 0.03 \
@@ -1164,6 +1167,10 @@ python object_visual_servo_test.py \
 
 Tune these values one at a time:
 
+- `--contrast-color-mode`: use `blue` for the current demo so only blue objects are detected. Use `all` only if you intentionally want the old saturated/dark foreground detector.
+- `--contrast-blue-hue-min`, `--contrast-blue-hue-max`: widen this range if a blue object is missed because the camera sees it as cyan or purple; narrow it if other colors are detected.
+- `--contrast-blue-min-saturation`: lower it if pale blue objects are missed; raise it if gray floor regions are detected.
+- `--contrast-blue-min-value`, `--contrast-blue-max-value`: adjust these if blue objects are missed in shadows or glare.
 - `--contrast-use-lab`: leave this off on rough/textured floors. LAB contrast can treat normal floor texture as an object. Use it only on smoother floors.
 - `--contrast-lab-delta`: only matters when `--contrast-use-lab` is enabled. Lower it if objects are missed; raise it if floor texture is detected.
 - `--contrast-min-saturation`: lower it if colored objects are missed; raise it if floor texture is detected.

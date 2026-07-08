@@ -19,6 +19,17 @@ def parse_args():
     parser.add_argument("--dark-value", type=int, default=70)
     parser.add_argument("--max-colored-value", type=int, default=245)
     parser.add_argument("--use-lab", action="store_true")
+    parser.add_argument(
+        "--color-mode",
+        choices=["blue", "all"],
+        default="blue",
+        help="Use blue to detect only blue objects. Use all for the old saturated/dark foreground detector.",
+    )
+    parser.add_argument("--blue-hue-min", type=int, default=90)
+    parser.add_argument("--blue-hue-max", type=int, default=135)
+    parser.add_argument("--blue-min-saturation", type=int, default=50)
+    parser.add_argument("--blue-min-value", type=int, default=35)
+    parser.add_argument("--blue-max-value", type=int, default=255)
     parser.add_argument("--process-width", type=int, default=320)
     parser.add_argument("--roi-top-ratio", type=float, default=0.15)
     parser.add_argument("--roi-bottom-ratio", type=float, default=0.82)
@@ -54,6 +65,12 @@ def main() -> int:
         max_colored_value=args.max_colored_value,
         dark_value=args.dark_value,
         use_lab_contrast=args.use_lab,
+        color_mode=args.color_mode,
+        blue_hue_min=args.blue_hue_min,
+        blue_hue_max=args.blue_hue_max,
+        blue_min_saturation=args.blue_min_saturation,
+        blue_min_value=args.blue_min_value,
+        blue_max_value=args.blue_max_value,
         process_width=args.process_width,
         roi_top_ratio=args.roi_top_ratio,
         roi_bottom_ratio=args.roi_bottom_ratio,
