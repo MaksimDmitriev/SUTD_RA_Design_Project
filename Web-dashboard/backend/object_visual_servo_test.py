@@ -1,16 +1,24 @@
 import argparse
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 import cv2
 
 from camera import Camera
-from clip_classifier import ClipClassifier
 from contrast_detector import ContrastBlobDetector
 from robot_ik import ArmCoordinate, KinematicsArm
 from robot_motion import create_motion_backend
 from yolo_detector import Detection, YoloDetector, crop_detection
+
+
+@dataclass
+class TargetPrediction:
+    label: str
+    confidence: float
+    prompt: str
+    scores: dict[str, float]
 
 
 def parse_args():
@@ -124,10 +132,19 @@ def parse_args():
     )
     parser.add_argument(
         "--approach-labels",
-        default="trash,keep",
+        default=None,
         help=(
-            "Comma-separated OpenCLIP labels that the robot should approach. "
-            "Use trash,keep,ignore while tuning movement with a test object."
+            "Comma-separated labels that the robot should approach. Defaults to "
+            "red_useful,purple_trash for YOLO detector-label mode, otherwise trash,keep."
+        ),
+    )
+    parser.add_argument(
+        "--classification-mode",
+        choices=["auto", "openclip", "detector-label"],
+        default="auto",
+        help=(
+            "How to decide whether to approach a detected object. auto uses YOLO "
+            "detector labels directly for --detector yolo and OpenCLIP for contrast."
         ),
     )
     parser.add_argument(
@@ -311,6 +328,17 @@ def save_latest_debug_frame(path: str | None, frame, detection, geometry, text: 
 
 def main() -> int:
     args = parse_args()
+    classification_mode = args.classification_mode
+    if classification_mode == "auto":
+        classification_mode = "detector-label" if args.detector == "yolo" else "openclip"
+
+    if args.approach_labels is None:
+        args.approach_labels = (
+            "red_useful,purple_trash"
+            if classification_mode == "detector-label"
+            else "trash,keep"
+        )
+
     approach_labels = {
         label.strip().lower()
         for label in args.approach_labels.split(",")
@@ -346,9 +374,15 @@ def main() -> int:
         print("[visual-servo] loading custom YOLO detector")
         detector = YoloDetector(args.model, confidence=args.conf, image_size=args.imgsz)
     detector.load()
-    print("[visual-servo] loading OpenCLIP classifier")
-    classifier = ClipClassifier()
-    classifier.load()
+    classifier = None
+    if classification_mode == "openclip":
+        from clip_classifier import ClipClassifier
+
+        print("[visual-servo] loading OpenCLIP classifier")
+        classifier = ClipClassifier()
+        classifier.load()
+    else:
+        print("[visual-servo] using detector labels for classification")
 
     motion = create_motion_backend(
         mode=args.motion,
@@ -427,8 +461,17 @@ def main() -> int:
             if active_prediction is None:
                 motion.stop()
                 detected_at = datetime.now().isoformat(timespec="seconds")
-                crop = crop_detection(frame, detection)
-                active_prediction = classifier.predict(crop)
+                if classification_mode == "openclip":
+                    crop = crop_detection(frame, detection)
+                    active_prediction = classifier.predict(crop)
+                else:
+                    label = detection.label.lower()
+                    active_prediction = TargetPrediction(
+                        label=label,
+                        confidence=detection.confidence,
+                        prompt="detector-label",
+                        scores={label: detection.confidence},
+                    )
                 text = (
                     f"{detection.label} {detection.confidence:.2f} "
                     f"{active_prediction.label} {active_prediction.confidence:.2f}"

@@ -729,6 +729,11 @@ Initially, the label files are empty. Then they will contain bounding boxes:
 
 Use a labeling tool to draw one box around each object and export YOLO-format labels. Recommended for this project: **CVAT**. It supports bounding-box annotation and YOLO export, works well for small object-detection datasets, and avoids depending on a paid dataset-hosting workflow.
 
+Clone CVAT by using
+```
+git clone https://github.com/cvat-ai/cvat.git
+```
+
 Other options:
 
 - Roboflow: convenient hosted workflow, but more platform-dependent.
@@ -1084,6 +1089,430 @@ You can also force the Hiwonder backend directly:
 ```bash
 python object_search_test.py --motion hiwonder --max-seconds 5
 ```
+
+## YOLO v2 red/purple direct-label workflow
+
+This is the current trained-detector path for the lab floor test. Keep it separate from the older optional YOLO workflow above:
+
+- Old YOLO flow: one class named `floor_object`, then OpenCLIP decides `trash`, `keep`, or `ignore`.
+- YOLO v2 flow: two detector classes named `red_useful` and `purple_trash`; the visual-servo script can use those detector labels directly.
+
+Use separate folders so v1 and v2 files do not overwrite each other:
+
+```text
+yolo_dataset_v2/sortibot_detector/
+runs_v2/sortibot/red_purple_detector/
+```
+
+### Laptop: collect robot-camera images
+
+Use robot-camera images, not phone images. The model must learn the robot camera's exposure, lens distortion, floor texture, object size, and low viewpoint.
+
+Recommended minimum dataset:
+
+```text
+red_useful:      60-100 images with boxes
+purple_trash:    60-100 images with boxes
+ignore:          30-50 empty-floor images with no boxes
+hard negatives:  20-40 images with no boxes
+```
+
+Hard negatives are images that look tempting but should not be detected: floor speckles, shadows, wall edges, wires, hands, robot body parts, reflections, and other non-target objects.
+
+Images with the robot overlay text such as `Voltage: 7.3V` are acceptable because that overlay is part of the real robot camera output. If it causes false positives later, add more ignore/hard-negative images with the same overlay.
+
+### Laptop: create the v2 dataset folders
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p yolo_dataset_v2/raw/keep
+mkdir -p yolo_dataset_v2/raw/trash
+mkdir -p yolo_dataset_v2/raw/ignore
+
+mkdir -p yolo_dataset_v2/sortibot_detector/images/train
+mkdir -p yolo_dataset_v2/sortibot_detector/images/val
+mkdir -p yolo_dataset_v2/sortibot_detector/labels/train
+mkdir -p yolo_dataset_v2/sortibot_detector/labels/val
+```
+
+Store the raw captures here:
+
+```text
+yolo_dataset_v2/raw/keep/    -> red cube / useful object
+yolo_dataset_v2/raw/trash/   -> purple trash object
+yolo_dataset_v2/raw/ignore/  -> empty floor and hard negatives
+```
+
+Then copy selected images into the train/val image folders.
+
+Do not split frame-by-frame from one continuous sequence. Keep whole object positions/chunks together. A good split is about 80% train and 20% validation, but the validation set must include different positions/distances/angles from the train set.
+
+Save this file as `yolo_dataset_v2/sortibot_detector/data.yaml`:
+
+```yaml
+path: yolo_dataset_v2/sortibot_detector
+train: images/train
+val: images/val
+
+names:
+  0: red_useful
+  1: purple_trash
+```
+
+### Laptop: label v2 images with local CVAT
+
+Run local CVAT from the project clone:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+git clone https://github.com/cvat-ai/cvat.git
+
+open -a Docker
+```
+
+Wait until Docker Desktop is running, then:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
+
+docker-compose up -d
+docker exec -it cvat_server bash -ic 'python3 ~/manage.py createsuperuser'
+```
+
+Open CVAT:
+
+```text
+http://localhost:8080
+```
+
+Create one project or task with exactly these labels:
+
+```text
+red_useful
+purple_trash
+```
+
+Prepare one upload ZIP from the images you want to label:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p /tmp/sortibot_cvat_uploads
+
+(cd yolo_dataset_v2/raw && zip -r /tmp/sortibot_cvat_uploads/sortibot_yolo_v2_raw.zip keep trash ignore)
+```
+
+In CVAT:
+
+```text
+1. Create a task under the v2 project.
+2. Upload /tmp/sortibot_cvat_uploads/sortibot_yolo_v2_raw.zip.
+3. Draw boxes only around the red useful object and the purple trash object.
+4. Leave ignore, empty-floor, and hard-negative images with no boxes.
+5. Export task dataset.
+6. Format: YOLO 1.1.
+7. Save images: yes.
+```
+
+It is normal that the exported images do not visually show boxes. YOLO export stores boxes in `.txt` label files, not burned into the image pixels.
+
+Stop CVAT when finished:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
+
+docker-compose down
+```
+
+### Laptop: copy exported CVAT labels into the v2 dataset
+
+Unzip the CVAT export into:
+
+```text
+yolo_dataset_v2/cvat_export/
+```
+
+For the current CVAT export layout, labels are under:
+
+```text
+yolo_dataset_v2/cvat_export/obj_train_data/keep/
+yolo_dataset_v2/cvat_export/obj_train_data/trash/
+yolo_dataset_v2/cvat_export/obj_train_data/ignore/
+```
+
+Copy each exported `.txt` file beside the matching train/val split. Empty `.txt` files are correct for ignore and hard-negative images.
+
+If the image files are already split into `images/train` and `images/val`, run:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+mkdir -p yolo_dataset_v2/sortibot_detector/labels/train
+mkdir -p yolo_dataset_v2/sortibot_detector/labels/val
+
+find yolo_dataset_v2/sortibot_detector/images/train -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -print0 |
+while IFS= read -r -d '' image_path; do
+  base="$(basename "${image_path%.*}")"
+  label_path="$(find yolo_dataset_v2/cvat_export/obj_train_data -name "$base.txt" -print -quit)"
+  if [ -n "$label_path" ]; then
+    cp "$label_path" "yolo_dataset_v2/sortibot_detector/labels/train/$base.txt"
+  else
+    : > "yolo_dataset_v2/sortibot_detector/labels/train/$base.txt"
+  fi
+done
+
+find yolo_dataset_v2/sortibot_detector/images/val -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) -print0 |
+while IFS= read -r -d '' image_path; do
+  base="$(basename "${image_path%.*}")"
+  label_path="$(find yolo_dataset_v2/cvat_export/obj_train_data -name "$base.txt" -print -quit)"
+  if [ -n "$label_path" ]; then
+    cp "$label_path" "yolo_dataset_v2/sortibot_detector/labels/val/$base.txt"
+  else
+    : > "yolo_dataset_v2/sortibot_detector/labels/val/$base.txt"
+  fi
+done
+```
+
+Sanity-check the dataset before training:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+find yolo_dataset_v2/sortibot_detector/images/train -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | wc -l
+find yolo_dataset_v2/sortibot_detector/labels/train -type f -name '*.txt' | wc -l
+
+find yolo_dataset_v2/sortibot_detector/images/val -type f \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' \) | wc -l
+find yolo_dataset_v2/sortibot_detector/labels/val -type f -name '*.txt' | wc -l
+
+awk '{print $1}' yolo_dataset_v2/sortibot_detector/labels/train/*.txt yolo_dataset_v2/sortibot_detector/labels/val/*.txt | sort | uniq -c
+find yolo_dataset_v2/sortibot_detector/labels -type f -name '*.txt' -empty | wc -l
+```
+
+Expected class IDs:
+
+```text
+0 -> red_useful
+1 -> purple_trash
+```
+
+The image count and label count should match for each split. Empty label files are expected for ignore and hard-negative images.
+
+### Laptop: train YOLO v2 on Apple Silicon
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+python3 -m venv .yolo-train-venv
+source .yolo-train-venv/bin/activate
+python -m pip install --upgrade pip setuptools wheel
+python -m pip install ultralytics
+```
+
+Train with MPS on Apple Silicon:
+
+```bash
+yolo detect train \
+  model=yolo11n.pt \
+  data="$PWD/yolo_dataset_v2/sortibot_detector/data.yaml" \
+  imgsz=640 \
+  epochs=80 \
+  batch=8 \
+  device=mps \
+  project="$PWD/runs_v2/sortibot" \
+  name=red_purple_detector
+```
+
+If MPS fails, use CPU:
+
+```bash
+yolo detect train \
+  model=yolo11n.pt \
+  data="$PWD/yolo_dataset_v2/sortibot_detector/data.yaml" \
+  imgsz=640 \
+  epochs=80 \
+  batch=8 \
+  device=cpu \
+  project="$PWD/runs_v2/sortibot" \
+  name=red_purple_detector
+```
+
+The training device does not affect robot deployment. The robot uses the exported NCNN model, not MPS.
+
+### Laptop: validate predictions visually
+
+Run prediction on the validation split:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+source .yolo-train-venv/bin/activate
+
+yolo detect predict \
+  model="$PWD/runs_v2/sortibot/red_purple_detector/weights/best.pt" \
+  source="$PWD/yolo_dataset_v2/sortibot_detector/images/val" \
+  imgsz=640 \
+  conf=0.25 \
+  project="$PWD/runs_v2/sortibot" \
+  name=red_purple_detector_val_predict
+```
+
+Inspect the generated images:
+
+```text
+runs_v2/sortibot/red_purple_detector_val_predict/
+```
+
+Good signs:
+
+- Red cube images are labeled `red_useful`.
+- Purple object images are labeled `purple_trash`.
+- Empty floor and hard-negative images have no boxes.
+- Small/far objects are detected at least often enough for the robot to approach during a 12 second test.
+
+### Laptop: export YOLO v2 to NCNN
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+source .yolo-train-venv/bin/activate
+
+yolo export \
+  model="$PWD/runs_v2/sortibot/red_purple_detector/weights/best.pt" \
+  format=ncnn \
+  imgsz=640
+```
+
+The export should create:
+
+```text
+runs_v2/sortibot/red_purple_detector/weights/best_ncnn_model/
+```
+
+Expected files:
+
+```text
+metadata.yaml
+model.ncnn.bin
+model.ncnn.param
+model_ncnn.py
+```
+
+### Laptop: copy YOLO v2 backend and model to robot
+
+Run this on the laptop:
+
+```bash
+cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  --exclude "__pycache__" \
+  --exclude ".venv" \
+  --exclude ".openclip-download-venv" \
+  --exclude ".yolo-train-venv" \
+  Web-dashboard/backend/ \
+  pi@192.168.149.1:~/Web-dashboard/backend/
+
+ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 \
+  "mkdir -p ~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model"
+
+rsync -av --delete \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  runs_v2/sortibot/red_purple_detector/weights/best_ncnn_model/ \
+  pi@192.168.149.1:~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
+```
+
+Do not copy the laptop `.venv`, `runs_v2/`, or raw dataset to the robot. The robot needs only:
+
+```text
+~/Web-dashboard/backend/
+~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
+```
+
+### Robot: install YOLO runtime for v2
+
+Run this on the robot after the backend venv exists:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python -m pip install --no-cache-dir ultralytics
+```
+
+If the robot has no internet in access-point mode, connect internet with the USB Wi-Fi adapter first, or install the package while the robot is on an internet-connected network.
+
+### Robot: quick YOLO v2 model test
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from ultralytics import YOLO
+
+model = YOLO("/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model", task="detect")
+print(model.names)
+PY
+```
+
+Expected names:
+
+```text
+{0: 'red_useful', 1: 'purple_trash'}
+```
+
+If this fails with `No module named ultralytics`, install the YOLO runtime in the robot venv. If it fails with a model path error, copy the NCNN folder again.
+
+### Robot: YOLO v2 visual-servo approach test
+
+Run this on the robot first with `--motion dry-run` if you only want to verify detections and commands without motor movement. Use `--motion auto` for the real MasterPi test.
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python object_visual_servo_test.py \
+  --motion auto \
+  --detector yolo \
+  --classification-mode detector-label \
+  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
+  --max-seconds 12 \
+  --conf 0.35 \
+  --target-bottom-ratio 0.68 \
+  --x-deadband-ratio 0.06 \
+  --bottom-deadband-ratio 0.03 \
+  --close-bottom-error-ratio 0.0 \
+  --close-x-deadband-ratio 0.18 \
+  --search-y-speed 20 \
+  --max-x-speed 18 \
+  --max-y-speed 20 \
+  --uncentered-y-scale 0.35 \
+  --approach-labels red_useful,purple_trash \
+  --stable-frames 3 \
+  --pickup-frames 2 \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
+```
+
+Expected behavior:
+
+- If the red cube is visible, the script should print `red_useful` and approach it.
+- If the purple object is visible, the script should print `purple_trash` and approach it.
+- If only floor/ignore objects are visible, the script should not approach a false box.
+- The latest annotated frame is written to `~/Web-dashboard/data/debug_detections/latest.jpg`.
+
+If the script says `unrecognized arguments: --classification-mode`, the backend code on the robot is old. Copy `Web-dashboard/backend/` to the robot again.
+
+If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--close-x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
 
 ### Robot: LAB/color contrast visual-servo approach test
 
