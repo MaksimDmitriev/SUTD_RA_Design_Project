@@ -151,7 +151,10 @@ def parse_args():
         "--search-y-speed",
         type=float,
         default=25.0,
-        help="Forward speed while no object is visible.",
+        help=(
+            "Forward translate speed during ignored-object cooldown. No-object "
+            "search uses --speed with the forward motion command."
+        ),
     )
     parser.add_argument("--max-x-speed", type=float, default=18.0)
     parser.add_argument("--max-y-speed", type=float, default=16.0)
@@ -426,7 +429,7 @@ def main() -> int:
                 stable_count = 0
                 pickup_count = 0
                 if active_prediction is None:
-                    motion.translate(0, args.search_y_speed)
+                    motion.forward()
                     if time.monotonic() - last_log_at >= 1.0:
                         print("[visual-servo] no object visible; slow search forward")
                         last_log_at = time.monotonic()
