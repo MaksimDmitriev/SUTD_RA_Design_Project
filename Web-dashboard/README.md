@@ -1578,25 +1578,27 @@ python object_visual_servo_test.py \
   --detector yolo \
   --classification-mode detector-label \
   --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
-  --max-seconds 10 \
+  --max-seconds 25 \
   --conf 0.35 \
   --target-x-ratio 0.50 \
-  --target-bottom-ratio 0.78 \
-  --x-deadband-ratio 0.12 \
-  --bottom-deadband-ratio 0.08 \
+  --target-bottom-ratio 0.94 \
+  --x-deadband-ratio 0.06 \
+  --bottom-deadband-ratio 0.04 \
   --close-bottom-error-ratio 0.0 \
   --close-x-deadband-ratio 0.20 \
   --search-y-speed 16 \
-  --max-x-speed 25 \
-  --min-x-speed 18 \
-  --max-y-speed 24 \
-  --min-y-speed 16 \
+  --max-x-speed 48 \
+  --min-x-speed 32 \
+  --max-y-speed 48 \
+  --min-y-speed 32 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.25 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
+  --speed 16 \
+  --direction 90 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
