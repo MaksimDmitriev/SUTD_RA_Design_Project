@@ -1575,21 +1575,28 @@ source .venv/bin/activate
 
 python object_visual_servo_test.py \
   --motion auto \
-  --max-seconds 12 \
-  --detector contrast \
-  --contrast-color-mode blue \
-  --target-bottom-ratio 0.68 \
-  --x-deadband-ratio 0.06 \
-  --bottom-deadband-ratio 0.03 \
+  --detector yolo \
+  --classification-mode detector-label \
+  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
+  --max-seconds 10 \
+  --conf 0.35 \
+  --target-x-ratio 0.50 \
+  --target-bottom-ratio 0.78 \
+  --x-deadband-ratio 0.12 \
+  --bottom-deadband-ratio 0.08 \
   --close-bottom-error-ratio 0.0 \
-  --close-x-deadband-ratio 0.18 \
-  --search-y-speed 25 \
-  --max-x-speed 18 \
-  --max-y-speed 25 \
-  --uncentered-y-scale 0.35 \
-  --approach-labels trash,keep,ignore \
-  --stable-frames 3 \
-  --pickup-frames 2 \
+  --close-x-deadband-ratio 0.20 \
+  --search-y-speed 16 \
+  --max-x-speed 25 \
+  --min-x-speed 18 \
+  --max-y-speed 24 \
+  --min-y-speed 16 \
+  --kp-x 120 \
+  --kp-y 45 \
+  --uncentered-y-scale 0.25 \
+  --approach-labels red_useful,purple_trash \
+  --stable-frames 2 \
+  --pickup-frames 1 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
