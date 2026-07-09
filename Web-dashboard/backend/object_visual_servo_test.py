@@ -259,7 +259,7 @@ def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
     if centered:
         x_speed = 0.0
     else:
-        # Positive x moves the chassis right in the Hiwonder translation API.
+        # Positive x moves the chassis right in the Hiwonder movement API.
         x_speed = clamp(args.kp_x * x_error, -args.max_x_speed, args.max_x_speed)
         if args.min_x_speed > 0:
             if x_speed < 0:

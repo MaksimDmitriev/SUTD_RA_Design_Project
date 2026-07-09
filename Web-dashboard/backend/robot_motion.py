@@ -1,4 +1,5 @@
 import importlib
+import math
 import os
 import shlex
 import subprocess
@@ -76,11 +77,18 @@ class HiwonderMecanumMotion:
         self.chassis.set_velocity(self.speed, self.direction, 0)
 
     def translate(self, velocity_x: float, velocity_y: float) -> None:
+        speed = math.hypot(velocity_x, velocity_y)
+        if speed < 1e-3:
+            self.stop()
+            return
+
+        direction = (math.degrees(math.atan2(velocity_y, velocity_x)) + 360.0) % 360.0
+        speed = max(-100.0, min(100.0, speed))
         print(
             f"[motion] hiwonder translate x={velocity_x:.1f} "
-            f"y={velocity_y:.1f}"
+            f"y={velocity_y:.1f} speed={speed:.1f} direction={direction:.1f}"
         )
-        self.chassis.translation(float(velocity_x), float(velocity_y))
+        self.chassis.set_velocity(float(speed), float(direction), 0)
 
     def stop(self) -> None:
         print("[motion] hiwonder stop")
