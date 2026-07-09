@@ -156,6 +156,18 @@ def parse_args():
     parser.add_argument("--max-x-speed", type=float, default=18.0)
     parser.add_argument("--max-y-speed", type=float, default=16.0)
     parser.add_argument(
+        "--min-x-speed",
+        type=float,
+        default=0.0,
+        help="Minimum sideways correction speed while the object is outside the x deadband.",
+    )
+    parser.add_argument(
+        "--min-y-speed",
+        type=float,
+        default=4.0,
+        help="Minimum forward approach speed while the object is not yet in the pickup zone.",
+    )
+    parser.add_argument(
         "--uncentered-y-scale",
         type=float,
         default=0.35,
@@ -246,6 +258,11 @@ def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
     else:
         # Positive x moves the chassis right in the Hiwonder translation API.
         x_speed = clamp(args.kp_x * x_error, -args.max_x_speed, args.max_x_speed)
+        if args.min_x_speed > 0:
+            if x_speed < 0:
+                x_speed = min(x_speed, -args.min_x_speed)
+            else:
+                x_speed = max(x_speed, args.min_x_speed)
         if args.invert_x_control:
             x_speed = -x_speed
 
@@ -253,7 +270,7 @@ def command_from_geometry(geometry: dict, args) -> tuple[float, float]:
         y_speed = 0.0
     else:
         # Positive y moves forward. Move slower as the object reaches the pickup line.
-        y_speed = clamp(args.kp_y * bottom_error, 4.0, args.max_y_speed)
+        y_speed = clamp(args.kp_y * bottom_error, args.min_y_speed, args.max_y_speed)
         if not centered:
             y_speed *= clamp(args.uncentered_y_scale, 0.0, 1.0)
 
@@ -565,6 +582,7 @@ def main() -> int:
         return 0
     finally:
         motion.stop()
+        camera.close()
 
 
 if __name__ == "__main__":
