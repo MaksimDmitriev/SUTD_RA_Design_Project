@@ -208,18 +208,87 @@ def parse_args():
     )
     parser.add_argument(
         "--grab",
+        dest="grab",
         action="store_true",
-        help="After non-ignore classification, run a simple IK grab sequence.",
+        help="Run the IK grab sequence after reaching the pickup zone.",
+    )
+    parser.add_argument(
+        "--no-grab",
+        dest="grab",
+        action="store_false",
+        help="Stop in the pickup zone without moving the arm.",
     )
     parser.add_argument(
         "--use-camera-transform",
         action="store_true",
         help="Convert detected pixel position to arm coordinates using MasterPi calibration.",
     )
+    parser.add_argument(
+        "--home-arm-before-approach",
+        action="store_true",
+        help=(
+            "Move the arm to the configured home coordinate before visual servoing. "
+            "Use this when arm/camera pose changes the stop position."
+        ),
+    )
+    parser.add_argument(
+        "--home-arm-only",
+        action="store_true",
+        help="Move the arm to the configured home coordinate and exit without driving.",
+    )
+    parser.add_argument(
+        "--open-gripper-before-approach",
+        action="store_true",
+        help="Open the gripper after startup arm homing.",
+    )
+    parser.add_argument(
+        "--home-servo4-angle",
+        type=int,
+        default=None,
+        help=(
+            "Optional raw servo-4 angle to apply after IK homing, before visual "
+            "servoing. Use this to tune the camera/arm startup pose."
+        ),
+    )
+    parser.add_argument(
+        "--home-servo4-pulse",
+        type=int,
+        default=None,
+        help=(
+            "Optional raw servo-4 PWM pulse to apply after IK homing. This overrides "
+            "--home-servo4-angle when both are provided."
+        ),
+    )
+    parser.add_argument("--home-servo4-duration", type=float, default=0.5)
+    parser.set_defaults(grab=True)
     parser.add_argument("--grab-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-y-cm", type=float, default=16.5)
     parser.add_argument("--grab-z-cm", type=float, default=2.0)
+    parser.add_argument("--grab-home-x-cm", type=float, default=0.0)
+    parser.add_argument("--grab-home-y-cm", type=float, default=6.0)
+    parser.add_argument("--grab-home-z-cm", type=float, default=18.0)
+    parser.add_argument("--grab-lift-cm", type=float, default=6.0)
+    parser.add_argument("--grab-min-approach-z-cm", type=float, default=8.0)
+    parser.add_argument("--grab-pitch", type=float, default=-90.0)
+    parser.add_argument("--grab-pitch-min", type=float, default=-90.0)
+    parser.add_argument("--grab-pitch-max", type=float, default=0.0)
+    parser.add_argument("--gripper-open-pulse", type=int, default=2000)
+    parser.add_argument("--gripper-close-pulse", type=int, default=1500)
     return parser.parse_args()
+
+
+def create_arm(args) -> KinematicsArm:
+    return KinematicsArm(
+        open_pulse=args.gripper_open_pulse,
+        close_pulse=args.gripper_close_pulse,
+        home=ArmCoordinate(
+            args.grab_home_x_cm,
+            args.grab_home_y_cm,
+            args.grab_home_z_cm,
+        ),
+        approach_lift_cm=args.grab_lift_cm,
+        min_approach_z_cm=args.grab_min_approach_z_cm,
+    )
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -364,6 +433,40 @@ def main() -> int:
         for label in args.approach_labels.split(",")
         if label.strip()
     }
+
+    if args.home_arm_before_approach or args.home_arm_only:
+        arm = create_arm(args)
+        print(
+            "[visual-servo] homing arm to "
+            f"({args.grab_home_x_cm:.1f}, {args.grab_home_y_cm:.1f}, "
+            f"{args.grab_home_z_cm:.1f}) before approach"
+        )
+        arm.move_home()
+        if args.home_servo4_pulse is not None:
+            print(
+                "[visual-servo] setting startup servo 4 pulse "
+                f"{args.home_servo4_pulse}"
+            )
+            arm.set_servo_pulse(
+                4,
+                args.home_servo4_pulse,
+                duration_seconds=args.home_servo4_duration,
+            )
+        elif args.home_servo4_angle is not None:
+            print(
+                "[visual-servo] setting startup servo 4 angle "
+                f"{args.home_servo4_angle}"
+            )
+            arm.set_servo_angle(
+                4,
+                args.home_servo4_angle,
+                duration_seconds=args.home_servo4_duration,
+            )
+        if args.open_gripper_before_approach:
+            arm.open_gripper()
+        if args.home_arm_only:
+            print("[visual-servo] arm homed; exiting")
+            return 0
 
     print("[visual-servo] loading camera")
     camera = Camera()
@@ -557,7 +660,7 @@ def main() -> int:
                 print(f"[{detected_at}] scores={active_prediction.scores}")
 
                 if args.grab:
-                    arm = KinematicsArm()
+                    arm = create_arm(args)
                     if args.use_camera_transform:
                         coordinate = arm.pixel_to_arm_coordinate(
                             geometry["center_x"],
@@ -572,7 +675,14 @@ def main() -> int:
                             args.grab_z_cm,
                         )
                     print(f"[{detected_at}] grabbing at {coordinate}")
-                    arm.grab_at(coordinate)
+                    arm.grab_at(
+                        coordinate,
+                        pitch=args.grab_pitch,
+                        pitch_min=args.grab_pitch_min,
+                        pitch_max=args.grab_pitch_max,
+                    )
+                else:
+                    print(f"[{detected_at}] grab disabled; leaving object in pickup zone")
 
                 return 0
 

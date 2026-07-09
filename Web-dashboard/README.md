@@ -1569,6 +1569,18 @@ Expected output is a stream of `no object visible`, `stabilizing`, `classified T
 
 Then run this on the robot with the MasterPi motion backend:
 
+If the camera position changes with arm pose, put the arm into a repeatable camera pose before the approach run. This uses the same IK home coordinate as the grab sequence:
+
+```bash
+python object_visual_servo_test.py \
+  --home-arm-only \
+  --grab-home-x-cm 0 \
+  --grab-home-y-cm 3 \
+  --grab-home-z-cm 28
+```
+
+For the actual approach run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose.
+
 ```bash
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
@@ -1591,14 +1603,18 @@ python object_visual_servo_test.py \
   --min-x-speed 32 \
   --max-y-speed 48 \
   --min-y-speed 32 \
+  --grab-home-x-cm 0 \
+  --grab-home-y-cm 3 \
+  --grab-home-z-cm 28 \
   --kp-x 120 \
   --kp-y 45 \
-  --uncentered-y-scale 0.25 \
+  --uncentered-y-scale 0.3 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
-  --speed 16 \
+  --speed 24 \
   --direction 90 \
+  --home-arm-before-approach \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
@@ -1619,7 +1635,9 @@ Tune these values one at a time:
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
-- `--search-y-speed`, `--max-y-speed`: decrease these if the robot overshoots the object.
+- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm to `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm` before the camera loop starts.
+- `--speed`: controls the no-object search speed when using the Hiwonder forward command.
+- `--max-y-speed`: decrease this if the robot overshoots the object during visual-servo approach.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
 - `--close-bottom-error-ratio`: keep this at `0.0` so the robot stops lateral correction once the object reaches the stop line.
 - `--close-x-deadband-ratio`: increase this if the robot reaches the object but keeps strafing past it instead of stopping.
@@ -1628,9 +1646,9 @@ Tune these values one at a time:
 - `--approach-labels`: use `trash,keep,ignore` while tuning movement with a test object; use `trash,keep` for real behavior.
 - `--ignore-cooldown-frames`: increase this if the same ignored object is classified repeatedly.
 
-If the script prints `no object visible` but the robot does not move, check the motion backend line. It must be `motion backend: hiwonder-mecanum`, not `dry-run`. If it is `hiwonder-mecanum` and still does not move, increase `--search-y-speed` to `35`.
+If the script prints `no object visible` but the robot does not move, check the motion backend line. It must be `motion backend: hiwonder-mecanum`, not `dry-run`. If it is `hiwonder-mecanum` and still does not move, increase `--speed` to `35`.
 
-Do not add `--grab` until the stop position is repeatable. When the robot reliably stops in a grabbable position, test the fixed capture-coordinate grab:
+The visual-servo script now runs the IK grab sequence automatically after the robot reaches the pickup zone. While tuning movement only, add `--no-grab` so the robot stops without moving the arm:
 
 ```bash
 python object_visual_servo_test.py \
@@ -1640,13 +1658,25 @@ python object_visual_servo_test.py \
   --target-bottom-ratio 0.68 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
-  --grab \
+  --no-grab
+```
+
+When the robot reliably stops in a grabbable position, remove `--no-grab` and tune the fixed capture-coordinate grab:
+
+```bash
+python object_visual_servo_test.py \
+  --motion auto \
+  --max-seconds 12 \
+  --detector contrast \
+  --target-bottom-ratio 0.68 \
+  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
   --grab-x-cm 0 \
   --grab-y-cm 16.5 \
   --grab-z-cm 2
 ```
 
-The default grab coordinate comes from the Hiwonder color-sorting sample capture point. It may need calibration on the real robot.
+The default grab coordinate comes from the Hiwonder color-sorting sample capture point. It may need calibration on the real robot. Gripper and approach parameters can be adjusted with `--gripper-open-pulse`, `--gripper-close-pulse`, `--grab-lift-cm`, `--grab-pitch`, `--grab-pitch-min`, and `--grab-pitch-max`.
 
 Test the ultrasonic sensor by itself on the robot:
 

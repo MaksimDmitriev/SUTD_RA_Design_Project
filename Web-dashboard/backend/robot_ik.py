@@ -19,10 +19,14 @@ class KinematicsArm:
         open_pulse: int = 2000,
         close_pulse: int = 1500,
         home: ArmCoordinate = ArmCoordinate(0, 6, 18),
+        approach_lift_cm: float = 6.0,
+        min_approach_z_cm: float = 8.0,
     ):
         self.open_pulse = open_pulse
         self.close_pulse = close_pulse
         self.home = home
+        self.approach_lift_cm = approach_lift_cm
+        self.min_approach_z_cm = min_approach_z_cm
         self._board = None
         self._ik = None
         self._transform = None
@@ -54,12 +58,20 @@ class KinematicsArm:
             ("common.ros_robot_controller_sdk", "Board"),
             ("masterpi_sdk.common_sdk.common.ros_robot_controller_sdk", "Board"),
             ("ros_robot_controller_sdk", "Board"),
+            ("common.board", "Board"),
+            ("board", "Board"),
         ]
         for module_name, class_name in board_candidates:
             try:
                 module = importlib.import_module(module_name)
                 board_cls = getattr(module, class_name)
                 self._board = board_cls()
+                if not hasattr(self._board, "pwm_servo_set_position"):
+                    errors.append(
+                        f"{module_name}.{class_name}: no pwm_servo_set_position"
+                    )
+                    self._board = None
+                    continue
                 break
             except Exception as exc:
                 errors.append(f"{module_name}.{class_name}: {exc!r}")
@@ -80,7 +92,9 @@ class KinematicsArm:
                 errors.append(f"{module_name}.{class_name}: {exc!r}")
 
         if self._board is None or self._ik is None:
-            raise RuntimeError("Could not load MasterPi IK arm API. " + " | ".join(errors))
+            raise RuntimeError(
+                "Could not load MasterPi IK arm API. " + " | ".join(errors)
+            )
 
     def load_transform(self):
         if self._transform is not None:
@@ -98,7 +112,9 @@ class KinematicsArm:
                 return self._transform
             except Exception as exc:
                 errors.append(f"{module_name}: {exc!r}")
-        raise RuntimeError("Could not load MasterPi camera transform. " + " | ".join(errors))
+        raise RuntimeError(
+            "Could not load MasterPi camera transform. " + " | ".join(errors)
+        )
 
     def open_gripper(self, duration_seconds: float = 0.5) -> None:
         self.load()
@@ -109,6 +125,31 @@ class KinematicsArm:
         self.load()
         self._board.pwm_servo_set_position(duration_seconds, [[1, self.close_pulse]])
         time.sleep(duration_seconds)
+
+    def set_servo_pulse(
+        self,
+        servo_id: int,
+        pulse: int,
+        duration_seconds: float = 0.5,
+    ) -> None:
+        if servo_id < 1 or servo_id > 6:
+            raise ValueError("servo_id must be between 1 and 6")
+        self.load()
+        self._board.pwm_servo_set_position(
+            duration_seconds,
+            [[servo_id, max(500, min(2500, int(pulse)))]],
+        )
+        time.sleep(duration_seconds)
+
+    def set_servo_angle(
+        self,
+        servo_id: int,
+        angle: int,
+        duration_seconds: float = 0.5,
+    ) -> None:
+        clamped = max(0, min(180, int(angle)))
+        pulse = int(round(500 + (clamped / 180) * 2000))
+        self.set_servo_pulse(servo_id, pulse, duration_seconds)
 
     def move_to(
         self,
@@ -143,14 +184,42 @@ class KinematicsArm:
             raise RuntimeError(f"Home coordinate is unreachable: {self.home}")
         time.sleep(result[2] / 1000)
 
-    def grab_at(self, coordinate: ArmCoordinate) -> None:
-        above = ArmCoordinate(coordinate.x, coordinate.y, max(coordinate.z + 6, 8))
+    def grab_at(
+        self,
+        coordinate: ArmCoordinate,
+        pitch: float = -90,
+        pitch_min: float = -90,
+        pitch_max: float = 0,
+    ) -> None:
+        above = ArmCoordinate(
+            coordinate.x,
+            coordinate.y,
+            max(coordinate.z + self.approach_lift_cm, self.min_approach_z_cm),
+        )
         self.move_home()
         self.open_gripper()
-        self.move_to(above, move_time_ms=800)
-        self.move_to(coordinate, move_time_ms=500)
+        self.move_to(
+            above,
+            pitch=pitch,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            move_time_ms=800,
+        )
+        self.move_to(
+            coordinate,
+            pitch=pitch,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            move_time_ms=500,
+        )
         self.close_gripper()
-        self.move_to(above, move_time_ms=800)
+        self.move_to(
+            above,
+            pitch=pitch,
+            pitch_min=pitch_min,
+            pitch_max=pitch_max,
+            move_time_ms=800,
+        )
         self.move_home()
 
     def pixel_to_arm_coordinate(
