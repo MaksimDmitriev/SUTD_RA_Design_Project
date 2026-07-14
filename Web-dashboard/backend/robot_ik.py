@@ -19,12 +19,18 @@ class KinematicsArm:
         open_pulse: int = 2000,
         close_pulse: int = 1500,
         home: ArmCoordinate = ArmCoordinate(0, 6, 18),
+        home_pitch: float = -45.0,
+        home_pitch_min: float = -90.0,
+        home_pitch_max: float = 90.0,
         approach_lift_cm: float = 6.0,
         min_approach_z_cm: float = 8.0,
     ):
         self.open_pulse = open_pulse
         self.close_pulse = close_pulse
         self.home = home
+        self.home_pitch = home_pitch
+        self.home_pitch_min = home_pitch_min
+        self.home_pitch_max = home_pitch_max
         self.approach_lift_cm = approach_lift_cm
         self.min_approach_z_cm = min_approach_z_cm
         self._board = None
@@ -175,9 +181,9 @@ class KinematicsArm:
         self.load()
         result = self._ik.setPitchRangeMoving(
             (self.home.x, self.home.y, self.home.z),
-            0,
-            -90,
-            90,
+            self.home_pitch,
+            self.home_pitch_min,
+            self.home_pitch_max,
             1500,
         )
         if result is False:

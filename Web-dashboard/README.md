@@ -1576,7 +1576,8 @@ python object_visual_servo_test.py \
   --home-arm-only \
   --grab-home-x-cm 0 \
   --grab-home-y-cm 3 \
-  --grab-home-z-cm 28
+  --grab-home-z-cm 28 \
+  --grab-home-pitch -45
 ```
 
 For the actual approach run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose.
@@ -1606,6 +1607,7 @@ python object_visual_servo_test.py \
   --grab-home-x-cm 0 \
   --grab-home-y-cm 3 \
   --grab-home-z-cm 28 \
+  --grab-home-pitch -45 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -1635,7 +1637,7 @@ Tune these values one at a time:
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
-- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm to `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm` before the camera loop starts.
+- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm to `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm` with `--grab-home-pitch` before the camera loop starts.
 - `--speed`: controls the no-object search speed when using the Hiwonder forward command.
 - `--max-y-speed`: decrease this if the robot overshoots the object during visual-servo approach.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.

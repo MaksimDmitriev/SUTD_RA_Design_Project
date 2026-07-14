@@ -267,6 +267,9 @@ def parse_args():
     parser.add_argument("--grab-home-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-home-y-cm", type=float, default=6.0)
     parser.add_argument("--grab-home-z-cm", type=float, default=18.0)
+    parser.add_argument("--grab-home-pitch", type=float, default=-45.0)
+    parser.add_argument("--grab-home-pitch-min", type=float, default=-90.0)
+    parser.add_argument("--grab-home-pitch-max", type=float, default=90.0)
     parser.add_argument("--grab-lift-cm", type=float, default=6.0)
     parser.add_argument("--grab-min-approach-z-cm", type=float, default=8.0)
     parser.add_argument("--grab-pitch", type=float, default=-90.0)
@@ -286,6 +289,9 @@ def create_arm(args) -> KinematicsArm:
             args.grab_home_y_cm,
             args.grab_home_z_cm,
         ),
+        home_pitch=args.grab_home_pitch,
+        home_pitch_min=args.grab_home_pitch_min,
+        home_pitch_max=args.grab_home_pitch_max,
         approach_lift_cm=args.grab_lift_cm,
         min_approach_z_cm=args.grab_min_approach_z_cm,
     )
