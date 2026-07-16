@@ -1491,7 +1491,6 @@ python object_visual_servo_test.py \
   --x-deadband-ratio 0.06 \
   --bottom-deadband-ratio 0.03 \
   --close-bottom-error-ratio 0.0 \
-  --close-x-deadband-ratio 0.18 \
   --search-y-speed 20 \
   --max-x-speed 18 \
   --max-y-speed 20 \
@@ -1512,7 +1511,7 @@ Expected behavior:
 
 If the script says `unrecognized arguments: --classification-mode`, the backend code on the robot is old. Copy `Web-dashboard/backend/` to the robot again.
 
-If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--close-x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
+If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
 
 ### Robot: LAB/color contrast visual-servo approach test
 
@@ -1629,7 +1628,6 @@ python object_visual_servo_test.py \
   --x-deadband-ratio 0.06 \
   --bottom-deadband-ratio 0.04 \
   --close-bottom-error-ratio 0.0 \
-  --close-x-deadband-ratio 0.20 \
   --search-y-speed 16 \
   --max-x-speed 48 \
   --min-x-speed 32 \
@@ -1677,7 +1675,6 @@ Tune these values one at a time:
 - `--max-y-speed`: decrease this if the robot overshoots the object during visual-servo approach.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
 - `--close-bottom-error-ratio`: keep this at `0.0` so the robot stops lateral correction once the object reaches the stop line.
-- `--close-x-deadband-ratio`: increase this if the robot reaches the object but keeps strafing past it instead of stopping.
 - `--uncentered-y-scale`: use `0.35` so the robot creeps forward while correcting left/right. If this is `0`, the robot tries pure sideways centering first; on some floors this can look like the robot detected the object but did not move.
 - `--invert-x-control`: add this if the object moves farther from the center line while tracking.
 - `--approach-labels`: use `trash,keep,ignore` while tuning movement with a test object; use `trash,keep` for real behavior.

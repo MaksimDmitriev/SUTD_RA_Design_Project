@@ -145,15 +145,6 @@ def parse_args():
             "0 means the object box has reached the target bottom line."
         ),
     )
-    parser.add_argument(
-        "--close-x-deadband-ratio",
-        type=float,
-        default=0.18,
-        help=(
-            "Allowed horizontal error once the object is already close. This prevents "
-            "the robot from strafing past the object while trying to center perfectly."
-        ),
-    )
     parser.add_argument("--stable-frames", type=int, default=3)
     parser.add_argument("--pickup-frames", type=int, default=2)
     parser.add_argument(
@@ -404,11 +395,7 @@ def is_pickup_ready(geometry: dict, args) -> bool:
     if geometry["bottom_error_ratio"] > args.bottom_deadband_ratio:
         return False
 
-    x_deadband = args.x_deadband_ratio
-    if geometry["bottom_error_ratio"] <= args.close_bottom_error_ratio:
-        x_deadband = max(x_deadband, args.close_x_deadband_ratio)
-
-    return abs(geometry["x_error_ratio"]) <= x_deadband
+    return abs(geometry["x_error_ratio"]) <= args.x_deadband_ratio
 
 
 def annotate_frame(frame, detection: Detection, geometry: dict, text: str):
