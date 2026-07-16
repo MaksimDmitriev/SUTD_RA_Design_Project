@@ -1573,6 +1573,25 @@ If the camera position changes with arm pose, put the arm into a repeatable came
 
 This is not meant to be magic: the arm servos are controlled by PWM pulse values. A pulse value is the low-level target position sent to one servo. We first moved the arm manually/in the MasterPi app until the camera saw the object from a useful angle, then read the actual pulse values from the controller. Replaying the same pulses puts the joints back into that same camera pose every run. ID1 is the gripper, so it is not part of the camera home pose.
 
+How one pulse value maps to the same joint angle:
+
+```text
+input pulse width -> target shaft angle
+internal sensor reads current shaft angle
+servo motor turns until current angle matches target angle
+```
+
+So `1136` is not an arbitrary number to the robot code. It is a pulse width command. The controller repeatedly sends a signal to servo ID3 where the high part of the signal is about `1136` microseconds wide. The servo electronics interpret that pulse width as a target angle.
+
+For example:
+
+```text
+ID3 currently at random angle
+you send pulse 1136
+servo ID3 treats 1136 as its target
+servo ID3 rotates until its internal feedback says it reached that target
+```
+
 ```bash
 python object_visual_servo_test.py \
   --home-arm-only \
@@ -1588,7 +1607,7 @@ python object_visual_servo_test.py \
   --home-pose my_home
 ```
 
-For the actual approach run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose.
+For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default. The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the fixed arm capture point used after the robot stops in the pickup zone.
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -1622,6 +1641,9 @@ python object_visual_servo_test.py \
   --speed 24 \
   --direction 90 \
   --home-arm-before-approach \
+  --grab-x-cm 0 \
+  --grab-y-cm 16.5 \
+  --grab-z-cm 2 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
