@@ -21,6 +21,38 @@ class TargetPrediction:
     scores: dict[str, float]
 
 
+HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
+    # Measured from the MasterPi app after positioning the arm in the desired
+    # camera-home pose. ID1/gripper is intentionally omitted.
+    "my_home": [(3, 1136), (4, 2460), (5, 1529), (6, 1405)],
+}
+
+
+def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
+    positions = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            servo_id_raw, pulse_raw = item.split(":", 1)
+            servo_id = int(servo_id_raw)
+            pulse = int(pulse_raw)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                "servo pulses must use servo_id:pulse pairs, for example "
+                "3:1136,4:2460,5:1529,6:1405"
+            ) from exc
+        if servo_id < 1 or servo_id > 6:
+            raise argparse.ArgumentTypeError("servo_id must be between 1 and 6")
+        if pulse < 500 or pulse > 2500:
+            raise argparse.ArgumentTypeError("pulse must be between 500 and 2500")
+        positions.append((servo_id, pulse))
+    if not positions:
+        raise argparse.ArgumentTypeError("at least one servo_id:pulse pair is required")
+    return positions
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -237,6 +269,25 @@ def parse_args():
         help="Move the arm to the configured home coordinate and exit without driving.",
     )
     parser.add_argument(
+        "--home-pose",
+        choices=["ik", *HOME_SERVO_POSES.keys()],
+        default="ik",
+        help=(
+            "Startup arm pose for --home-arm-before-approach/--home-arm-only. "
+            "ik uses --grab-home-x/y/z; my_home replays measured servo pulses."
+        ),
+    )
+    parser.add_argument(
+        "--home-servo-pulses",
+        type=parse_servo_pulses,
+        default=None,
+        help=(
+            "Optional comma-separated servo_id:pulse startup pose, for example "
+            "3:1136,4:2460,5:1529,6:1405. Overrides --home-pose."
+        ),
+    )
+    parser.add_argument("--home-servo-duration", type=float, default=1.5)
+    parser.add_argument(
         "--open-gripper-before-approach",
         action="store_true",
         help="Open the gripper after startup arm homing.",
@@ -436,12 +487,32 @@ def main() -> int:
 
     if args.home_arm_before_approach or args.home_arm_only:
         arm = create_arm(args)
-        print(
-            "[visual-servo] homing arm to "
-            f"({args.grab_home_x_cm:.1f}, {args.grab_home_y_cm:.1f}, "
-            f"{args.grab_home_z_cm:.1f}) before approach"
-        )
-        arm.move_home()
+        if args.home_servo_pulses is not None:
+            print(
+                "[visual-servo] homing arm with custom servo pulses "
+                f"{args.home_servo_pulses}"
+            )
+            arm.set_servo_pulses(
+                args.home_servo_pulses,
+                duration_seconds=args.home_servo_duration,
+            )
+        elif args.home_pose != "ik":
+            positions = HOME_SERVO_POSES[args.home_pose]
+            print(
+                f"[visual-servo] homing arm to {args.home_pose} servo pose "
+                f"{positions}"
+            )
+            arm.set_servo_pulses(
+                positions,
+                duration_seconds=args.home_servo_duration,
+            )
+        else:
+            print(
+                "[visual-servo] homing arm to "
+                f"({args.grab_home_x_cm:.1f}, {args.grab_home_y_cm:.1f}, "
+                f"{args.grab_home_z_cm:.1f}) before approach"
+            )
+            arm.move_home()
         if args.home_servo4_pulse is not None:
             print(
                 "[visual-servo] setting startup servo 4 pulse "

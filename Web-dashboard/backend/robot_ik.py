@@ -141,6 +141,22 @@ class KinematicsArm:
         )
         time.sleep(duration_seconds)
 
+    def set_servo_pulses(
+        self,
+        positions: list[tuple[int, int]],
+        duration_seconds: float = 0.5,
+    ) -> None:
+        if not positions:
+            return
+        normalized = []
+        for servo_id, pulse in positions:
+            if servo_id < 1 or servo_id > 6:
+                raise ValueError("servo_id must be between 1 and 6")
+            normalized.append([servo_id, max(500, min(2500, int(pulse)))])
+        self.load()
+        self._board.pwm_servo_set_position(duration_seconds, normalized)
+        time.sleep(duration_seconds)
+
     def set_servo_angle(
         self,
         servo_id: int,

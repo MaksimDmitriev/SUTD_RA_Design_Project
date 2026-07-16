@@ -1569,14 +1569,23 @@ Expected output is a stream of `no object visible`, `stabilizing`, `classified T
 
 Then run this on the robot with the MasterPi motion backend:
 
-If the camera position changes with arm pose, put the arm into a repeatable camera pose before the approach run. This uses the same IK home coordinate as the grab sequence:
+If the camera position changes with arm pose, put the arm into a repeatable camera pose before the approach run. For the current robot, use the measured `my_home` servo pose from the MasterPi app rather than the IK coordinate. This is more repeatable after a servo replacement because it replays the actual controller pulses.
+
+This is not meant to be magic: the arm servos are controlled by PWM pulse values. A pulse value is the low-level target position sent to one servo. We first moved the arm manually/in the MasterPi app until the camera saw the object from a useful angle, then read the actual pulse values from the controller. Replaying the same pulses puts the joints back into that same camera pose every run. ID1 is the gripper, so it is not part of the camera home pose.
 
 ```bash
 python object_visual_servo_test.py \
   --home-arm-only \
-  --grab-home-x-cm 0 \
-  --grab-home-y-cm 3 \
-  --grab-home-z-cm 28
+  --home-servo-pulses "3:1136,4:2460,5:1529,6:1405" \
+  --home-servo-duration 1.5
+```
+
+After copying the updated backend, the same pose is also available as:
+
+```bash
+python object_visual_servo_test.py \
+  --home-arm-only \
+  --home-pose my_home
 ```
 
 For the actual approach run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose.
@@ -1603,9 +1612,7 @@ python object_visual_servo_test.py \
   --min-x-speed 32 \
   --max-y-speed 48 \
   --min-y-speed 32 \
-  --grab-home-x-cm 0 \
-  --grab-home-y-cm 3 \
-  --grab-home-z-cm 28 \
+  --home-pose my_home \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -1635,7 +1642,11 @@ Tune these values one at a time:
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
-- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm to `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm` before the camera loop starts.
+- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm before the camera loop starts.
+- `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1136`, `ID4=2460`, `ID5=1529`, `ID6=1405`. ID1/gripper is not included.
+- `--home-servo-pulses`: override the named home pose with measured values, for example `3:1136,4:2460,5:1529,6:1405`.
+- `--home-servo-duration`: how long, in seconds, the controller should take to move from the current joint positions to the requested pulse positions. For example, `--home-servo-duration 1.5` means move over about 1.5 seconds; `1.0` means move faster, over about 1 second.
+- `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm`: only used when `--home-pose ik` is selected.
 - `--speed`: controls the no-object search speed when using the Hiwonder forward command.
 - `--max-y-speed`: decrease this if the robot overshoots the object during visual-servo approach.
 - `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
