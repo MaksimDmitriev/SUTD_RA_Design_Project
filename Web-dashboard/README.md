@@ -1575,6 +1575,8 @@ This is not meant to be magic: the arm servos are controlled by PWM pulse values
 
 How one pulse value maps to the same joint angle:
 
+A hobby servo is basically a small closed-loop position controller.
+
 ```text
 input pulse width -> target shaft angle
 internal sensor reads current shaft angle
@@ -1591,6 +1593,8 @@ you send pulse 1136
 servo ID3 treats 1136 as its target
 servo ID3 rotates until its internal feedback says it reached that target
 ```
+
+Do not use `--grab-home-x-cm`, `--grab-home-y-cm`, and `--grab-home-z-cm` as the normal camera startup pose unless you are intentionally testing IK. An IK `x,y,z` coordinate describes the end-effector point in space, not the full camera pose. The same end-effector point can still depend on pitch limits, solver choice, servo calibration, and how a replaced servo was mounted. For the camera startup pose we need the same joint angles because the camera is attached to the arm, so raw pulse replay is the more repeatable choice.
 
 ```bash
 python object_visual_servo_test.py \
