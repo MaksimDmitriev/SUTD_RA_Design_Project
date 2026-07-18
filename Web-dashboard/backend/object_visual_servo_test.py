@@ -148,6 +148,16 @@ def parse_args():
     parser.add_argument("--stable-frames", type=int, default=3)
     parser.add_argument("--pickup-frames", type=int, default=2)
     parser.add_argument(
+        "--post-pickup-drive-seconds",
+        type=float,
+        default=1.0,
+        help=(
+            "After the existing pickup-zone condition is reached, keep driving "
+            "strictly forward for this many seconds before stopping/grabbing. "
+            "Use 0 to disable."
+        ),
+    )
+    parser.add_argument(
         "--ignore-cooldown-frames",
         type=int,
         default=8,
@@ -580,6 +590,7 @@ def main() -> int:
     ignore_cooldown = 0
     active_prediction = None
     last_log_at = 0.0
+    last_forward_speed = 0.0
 
     try:
         while time.monotonic() - started_at < args.max_seconds:
@@ -696,6 +707,15 @@ def main() -> int:
             )
 
             if pickup_count >= args.pickup_frames:
+                final_forward_speed = last_forward_speed or args.min_y_speed
+                if args.post_pickup_drive_seconds > 0 and final_forward_speed > 0.001:
+                    print(
+                        "[visual-servo] pickup zone reached; final drive "
+                        f"{args.post_pickup_drive_seconds:.2f}s "
+                        f"cmd=(0.0,{final_forward_speed:.1f})"
+                    )
+                    motion.translate(0.0, final_forward_speed)
+                    time.sleep(args.post_pickup_drive_seconds)
                 motion.stop()
                 detected_at = datetime.now().isoformat(timespec="seconds")
                 text = (
@@ -744,6 +764,8 @@ def main() -> int:
 
                 return 0
 
+            if y_speed > 0.001:
+                last_forward_speed = y_speed
             motion.translate(x_speed, y_speed)
             save_debug_frame(args.debug_frame_dir, frame, detection, geometry, "tracking")
             time.sleep(args.poll_seconds)

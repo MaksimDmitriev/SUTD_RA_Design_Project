@@ -1640,6 +1640,7 @@ python object_visual_servo_test.py \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
+  --post-pickup-drive-seconds 1.0 \
   --speed 24 \
   --direction 90 \
   --home-arm-before-approach \
@@ -1666,6 +1667,7 @@ Tune these values one at a time:
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
+- `--post-pickup-drive-seconds`: after the existing pickup-zone condition is reached, continue strictly forward for this many seconds before stopping and grabbing. The default is `1.0`; use `0` to disable this extra final push.
 - `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm before the camera loop starts.
 - `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1136`, `ID4=2460`, `ID5=1529`, `ID6=1405`. ID1/gripper is not included.
 - `--home-servo-pulses`: override the named home pose with measured values, for example `3:1136,4:2460,5:1529,6:1405`.
