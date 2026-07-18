@@ -1610,7 +1610,7 @@ python object_visual_servo_test.py \
   --home-pose my_home
 ```
 
-For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default. The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the fixed arm capture point used after the robot stops in the pickup zone.
+For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default. The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops in the pickup zone. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -1633,7 +1633,8 @@ python object_visual_servo_test.py \
   --min-x-speed 32 \
   --max-y-speed 48 \
   --min-y-speed 32 \
-  --home-pose my_home \
+  --home-servo-pulses "3:1136,4:2460,5:1529,6:1405" \
+  --home-servo-duration 1.5 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -1644,9 +1645,15 @@ python object_visual_servo_test.py \
   --speed 24 \
   --direction 90 \
   --home-arm-before-approach \
+  --arm-visual-align \
+  --arm-align-target-x-ratio 0.50 \
+  --arm-align-target-y-ratio 0.55 \
+  --arm-align-deadband-ratio 0.08 \
+  --arm-align-max-steps 6 \
+  --arm-align-step-cm 0.4 \
   --grab-x-cm 0 \
-  --grab-y-cm 16.5 \
-  --grab-z-cm 2 \
+  --grab-y-cm 12.0 \
+  --grab-z-cm 0.1 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 ```
@@ -1668,6 +1675,11 @@ Tune these values one at a time:
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
 - `--post-pickup-drive-seconds`: after the existing pickup-zone condition is reached, continue strictly forward for this many seconds before stopping and grabbing. The default is `1.0`; use `0` to disable this extra final push.
+- `--arm-visual-align`: after the chassis has stopped, the arm opens the gripper, moves above the grab coordinate, looks through the camera again, and nudges the IK `x/y` coordinate before lowering to grab.
+- `--arm-align-target-x-ratio`, `--arm-align-target-y-ratio`: where the object center should appear in the camera frame during arm alignment. Start with `0.50,0.55`; tune these if the gripper is correctly positioned while the object appears slightly off-center in the camera.
+- `--arm-align-deadband-ratio`: how close the object center must be to the arm-alignment target point before the script stops nudging and grabs.
+- `--arm-align-step-cm`: maximum arm-coordinate movement per alignment nudge. Keep this small; `0.4` means each correction is at most 4 mm.
+- `--invert-arm-align-x`, `--invert-arm-align-y`: add one of these if an arm nudge moves the object farther from the target point in the camera image.
 - `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm before the camera loop starts.
 - `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1136`, `ID4=2460`, `ID5=1529`, `ID6=1405`. ID1/gripper is not included.
 - `--home-servo-pulses`: override the named home pose with measured values, for example `3:1136,4:2460,5:1529,6:1405`.
@@ -1708,8 +1720,8 @@ python object_visual_servo_test.py \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
   --grab-x-cm 0 \
-  --grab-y-cm 16.5 \
-  --grab-z-cm 2
+  --grab-y-cm 12.0 \
+  --grab-z-cm 0.1
 ```
 
 The default grab coordinate comes from the Hiwonder color-sorting sample capture point. It may need calibration on the real robot. Gripper and approach parameters can be adjusted with `--gripper-open-pulse`, `--gripper-close-pulse`, `--grab-lift-cm`, `--grab-pitch`, `--grab-pitch-min`, and `--grab-pitch-max`.

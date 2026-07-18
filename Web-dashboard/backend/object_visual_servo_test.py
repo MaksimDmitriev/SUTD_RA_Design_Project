@@ -314,8 +314,8 @@ def parse_args():
     parser.add_argument("--home-servo4-duration", type=float, default=0.5)
     parser.set_defaults(grab=True)
     parser.add_argument("--grab-x-cm", type=float, default=0.0)
-    parser.add_argument("--grab-y-cm", type=float, default=16.5)
-    parser.add_argument("--grab-z-cm", type=float, default=2.0)
+    parser.add_argument("--grab-y-cm", type=float, default=12.0)
+    parser.add_argument("--grab-z-cm", type=float, default=0.1)
     parser.add_argument("--grab-home-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-home-y-cm", type=float, default=6.0)
     parser.add_argument("--grab-home-z-cm", type=float, default=18.0)
@@ -324,6 +324,73 @@ def parse_args():
     parser.add_argument("--grab-pitch", type=float, default=-90.0)
     parser.add_argument("--grab-pitch-min", type=float, default=-90.0)
     parser.add_argument("--grab-pitch-max", type=float, default=0.0)
+    parser.add_argument(
+        "--arm-visual-align",
+        action="store_true",
+        help=(
+            "After the chassis reaches the pickup zone, move the arm above the "
+            "grab point and use the camera to make small x/y IK nudges before "
+            "the final grab descent."
+        ),
+    )
+    parser.add_argument(
+        "--arm-align-target-x-ratio",
+        type=float,
+        default=0.50,
+        help="Desired object center x ratio during arm visual alignment.",
+    )
+    parser.add_argument(
+        "--arm-align-target-y-ratio",
+        type=float,
+        default=0.55,
+        help="Desired object center y ratio during arm visual alignment.",
+    )
+    parser.add_argument(
+        "--arm-align-deadband-ratio",
+        type=float,
+        default=0.08,
+        help="Allowed image error during arm visual alignment.",
+    )
+    parser.add_argument(
+        "--arm-align-max-steps",
+        type=int,
+        default=6,
+        help="Maximum arm visual-alignment nudges before grabbing anyway.",
+    )
+    parser.add_argument(
+        "--arm-align-step-cm",
+        type=float,
+        default=0.4,
+        help="Maximum x/y arm-coordinate nudge per visual-alignment step.",
+    )
+    parser.add_argument(
+        "--arm-align-kp-cm",
+        type=float,
+        default=4.0,
+        help="Arm visual-alignment proportional gain in cm per image-ratio error.",
+    )
+    parser.add_argument(
+        "--arm-align-frame-tries",
+        type=int,
+        default=5,
+        help="Camera frames to try for each arm visual-alignment observation.",
+    )
+    parser.add_argument(
+        "--arm-align-settle-seconds",
+        type=float,
+        default=0.15,
+        help="Delay after each arm nudge before reading the next camera frame.",
+    )
+    parser.add_argument(
+        "--invert-arm-align-x",
+        action="store_true",
+        help="Reverse x-coordinate nudges during arm visual alignment.",
+    )
+    parser.add_argument(
+        "--invert-arm-align-y",
+        action="store_true",
+        help="Reverse y-coordinate nudges during arm visual alignment.",
+    )
     parser.add_argument("--gripper-open-pulse", type=int, default=2000)
     parser.add_argument("--gripper-close-pulse", type=int, default=1500)
     return parser.parse_args()
@@ -406,6 +473,208 @@ def is_pickup_ready(geometry: dict, args) -> bool:
         return False
 
     return abs(geometry["x_error_ratio"]) <= args.x_deadband_ratio
+
+
+def coordinate_above_grab(arm: KinematicsArm, coordinate: ArmCoordinate) -> ArmCoordinate:
+    return ArmCoordinate(
+        coordinate.x,
+        coordinate.y,
+        max(coordinate.z + arm.approach_lift_cm, arm.min_approach_z_cm),
+    )
+
+
+def best_detection_for_alignment(
+    detections: list[Detection],
+    target_label: str,
+    approach_labels: set[str],
+) -> Detection | None:
+    matching = [
+        detection
+        for detection in detections
+        if detection.label.lower() == target_label.lower()
+    ]
+    if matching:
+        return matching[0]
+
+    acceptable = [
+        detection
+        for detection in detections
+        if detection.label.lower() in approach_labels
+    ]
+    if acceptable:
+        return acceptable[0]
+
+    return None
+
+
+def read_alignment_detection(
+    camera: Camera,
+    detector,
+    target_label: str,
+    approach_labels: set[str],
+    frame_tries: int,
+) -> tuple[object | None, Detection | None, dict | None]:
+    attempts = max(1, frame_tries)
+    for _ in range(attempts):
+        frame = camera.read()
+        detections = detector.detect(frame)
+        detection = best_detection_for_alignment(detections, target_label, approach_labels)
+        if detection is None:
+            continue
+        geometry = detection_geometry_for_alignment(frame, detection)
+        return frame, detection, geometry
+    return None, None, None
+
+
+def detection_geometry_for_alignment(frame, detection: Detection) -> dict:
+    height, width = frame.shape[:2]
+    x1, y1, x2, y2 = detection.xyxy
+    center_x = (x1 + x2) / 2.0
+    center_y = (y1 + y2) / 2.0
+    return {
+        "width": width,
+        "height": height,
+        "center_x": center_x,
+        "center_y": center_y,
+        "x_ratio": center_x / width,
+        "y_ratio": center_y / height,
+    }
+
+
+def visually_align_arm(
+    args,
+    camera: Camera,
+    detector,
+    arm: KinematicsArm,
+    coordinate: ArmCoordinate,
+    target_label: str,
+    approach_labels: set[str],
+) -> ArmCoordinate:
+    aligned = ArmCoordinate(coordinate.x, coordinate.y, coordinate.z)
+    above = coordinate_above_grab(arm, aligned)
+    print(f"[visual-servo] arm visual align: moving above {above}")
+    arm.move_to(
+        above,
+        pitch=args.grab_pitch,
+        pitch_min=args.grab_pitch_min,
+        pitch_max=args.grab_pitch_max,
+        move_time_ms=800,
+    )
+    time.sleep(args.arm_align_settle_seconds)
+
+    x_sign = -1.0 if args.invert_arm_align_x else 1.0
+    y_sign = -1.0 if args.invert_arm_align_y else 1.0
+
+    for step_index in range(max(0, args.arm_align_max_steps)):
+        frame, detection, geometry = read_alignment_detection(
+            camera,
+            detector,
+            target_label,
+            approach_labels,
+            args.arm_align_frame_tries,
+        )
+        if detection is None or geometry is None:
+            print(
+                "[visual-servo] arm visual align: no detection; "
+                "using current grab coordinate"
+            )
+            return aligned
+
+        x_error = geometry["x_ratio"] - args.arm_align_target_x_ratio
+        y_error = geometry["y_ratio"] - args.arm_align_target_y_ratio
+        print(
+            "[visual-servo] arm visual align "
+            f"{step_index + 1}/{args.arm_align_max_steps} "
+            f"label={detection.label} conf={detection.confidence:.3f} "
+            f"x_err={x_error:.3f} y_err={y_error:.3f} "
+            f"coord=({aligned.x:.2f},{aligned.y:.2f},{aligned.z:.2f})"
+        )
+
+        if (
+            abs(x_error) <= args.arm_align_deadband_ratio
+            and abs(y_error) <= args.arm_align_deadband_ratio
+        ):
+            print("[visual-servo] arm visual align: target in alignment window")
+            return aligned
+
+        dx = clamp(
+            args.arm_align_kp_cm * x_error * x_sign,
+            -args.arm_align_step_cm,
+            args.arm_align_step_cm,
+        )
+        dy = clamp(
+            args.arm_align_kp_cm * y_error * y_sign,
+            -args.arm_align_step_cm,
+            args.arm_align_step_cm,
+        )
+        aligned = ArmCoordinate(aligned.x + dx, aligned.y + dy, aligned.z)
+        above = coordinate_above_grab(arm, aligned)
+        print(
+            "[visual-servo] arm visual align: nudging above "
+            f"({above.x:.2f},{above.y:.2f},{above.z:.2f})"
+        )
+        arm.move_to(
+            above,
+            pitch=args.grab_pitch,
+            pitch_min=args.grab_pitch_min,
+            pitch_max=args.grab_pitch_max,
+            move_time_ms=400,
+        )
+        time.sleep(args.arm_align_settle_seconds)
+
+    print("[visual-servo] arm visual align: max steps reached")
+    return aligned
+
+
+def grab_with_optional_alignment(
+    args,
+    camera: Camera,
+    detector,
+    arm: KinematicsArm,
+    coordinate: ArmCoordinate,
+    target_label: str,
+    approach_labels: set[str],
+) -> ArmCoordinate:
+    arm.move_home()
+    arm.open_gripper()
+
+    if args.arm_visual_align:
+        coordinate = visually_align_arm(
+            args,
+            camera,
+            detector,
+            arm,
+            coordinate,
+            target_label,
+            approach_labels,
+        )
+
+    above = coordinate_above_grab(arm, coordinate)
+    print(f"[visual-servo] arm grabbing from aligned coordinate {coordinate}")
+    arm.move_to(
+        above,
+        pitch=args.grab_pitch,
+        pitch_min=args.grab_pitch_min,
+        pitch_max=args.grab_pitch_max,
+        move_time_ms=500,
+    )
+    arm.move_to(
+        coordinate,
+        pitch=args.grab_pitch,
+        pitch_min=args.grab_pitch_min,
+        pitch_max=args.grab_pitch_max,
+        move_time_ms=500,
+    )
+    arm.close_gripper()
+    arm.move_to(
+        above,
+        pitch=args.grab_pitch,
+        pitch_min=args.grab_pitch_min,
+        pitch_max=args.grab_pitch_max,
+        move_time_ms=800,
+    )
+    arm.move_home()
+    return coordinate
 
 
 def annotate_frame(frame, detection: Detection, geometry: dict, text: str):
@@ -753,12 +1022,20 @@ def main() -> int:
                             args.grab_z_cm,
                         )
                     print(f"[{detected_at}] grabbing at {coordinate}")
-                    arm.grab_at(
+                    final_coordinate = grab_with_optional_alignment(
+                        args,
+                        camera,
+                        detector,
+                        arm,
                         coordinate,
-                        pitch=args.grab_pitch,
-                        pitch_min=args.grab_pitch_min,
-                        pitch_max=args.grab_pitch_max,
+                        active_prediction.label,
+                        approach_labels,
                     )
+                    if args.arm_visual_align:
+                        print(
+                            f"[{detected_at}] arm visual align final coordinate "
+                            f"{final_coordinate}"
+                        )
                 else:
                     print(f"[{detected_at}] grab disabled; leaving object in pickup zone")
 

@@ -1,6 +1,10 @@
 ## Run the solution:
 
 ```
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+
 python object_visual_servo_test.py \
   --motion auto \
   --detector yolo \
@@ -20,7 +24,7 @@ python object_visual_servo_test.py \
   --min-y-speed 32 \
   --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5 \
-  --post-pickup-drive-seconds 0.7 \
+  --post-pickup-drive-seconds 0.5 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -34,8 +38,13 @@ python object_visual_servo_test.py \
   --grab-y-cm 12.0 \
   --grab-z-cm 0.1 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
-
+  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
+  --arm-visual-align \
+  --arm-align-target-x-ratio 0.50 \
+  --arm-align-target-y-ratio 0.55 \
+  --arm-align-deadband-ratio 0.08 \
+  --arm-align-max-steps 6 \
+  --arm-align-step-cm 0.4
 ```
 
 ## Other
@@ -119,3 +128,40 @@ python object_visual_servo_test.py \
   pi@192.168.149.1:~/Web-dashboard/data/debug_detections/ \
   $HOME/Downloads/sortibot_debug_detections/
 ```
+
+
+measuring 
+
+
+Loading /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model for NCNN inference...
+sample=1 label=red_useful conf=0.790 bottom_y_ratio=0.4854 center_x_ratio=0.4680 xyxy=(282, 201, 317, 233)
+sample=2 label=red_useful conf=0.809 bottom_y_ratio=0.4854 center_x_ratio=0.4680 xyxy=(281, 200, 318, 233)
+sample=3 label=red_useful conf=0.834 bottom_y_ratio=0.4854 center_x_ratio=0.4672 xyxy=(281, 201, 317, 233)
+sample=4 label=red_useful conf=0.609 bottom_y_ratio=0.4833 center_x_ratio=0.4680 xyxy=(282, 201, 317, 232)
+sample=5 label=red_useful conf=0.904 bottom_y_ratio=0.4854 center_x_ratio=0.4672 xyxy=(281, 200, 317, 233)
+
+average_samples=5
+label=red_useful
+bottom_y_ratio=0.4850
+center_x_ratio=0.4677
+box_height_ratio=0.0671
+distance from the front edge of chassis: 74cm
+
+
+
+---
+
+
+Loading /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model for NCNN inference...
+sample=1 label=red_useful conf=0.770 bottom_y_ratio=0.5250 center_x_ratio=0.4352 xyxy=(259, 216, 298, 252)
+sample=2 label=red_useful conf=0.756 bottom_y_ratio=0.5250 center_x_ratio=0.4352 xyxy=(258, 216, 299, 252)
+sample=3 label=red_useful conf=0.792 bottom_y_ratio=0.5250 center_x_ratio=0.4344 xyxy=(258, 216, 298, 252)
+sample=4 label=red_useful conf=0.717 bottom_y_ratio=0.5229 center_x_ratio=0.4352 xyxy=(259, 216, 298, 251)
+sample=5 label=red_useful conf=0.788 bottom_y_ratio=0.5250 center_x_ratio=0.4352 xyxy=(259, 216, 298, 252)
+
+average_samples=5
+label=red_useful
+bottom_y_ratio=0.5246
+center_x_ratio=0.4350
+box_height_ratio=0.0746
+distance from the front edge of chassis: 64cm
