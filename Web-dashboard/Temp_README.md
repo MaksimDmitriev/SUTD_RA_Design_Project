@@ -20,7 +20,7 @@ python object_visual_servo_test.py \
   --min-y-speed 32 \
   --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5 \
-  --post-pickup-drive-seconds 0.5 \
+  --post-pickup-drive-seconds 0.8 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -35,6 +35,7 @@ python object_visual_servo_test.py \
   --grab-z-cm 0.1 \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
+
 
 ```
 
