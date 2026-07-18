@@ -20,7 +20,7 @@ python object_visual_servo_test.py \
   --min-y-speed 32 \
   --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5 \
-  --post-pickup-drive-seconds 0.8 \
+  --post-pickup-drive-seconds 0.7 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
@@ -36,16 +36,6 @@ python object_visual_servo_test.py \
   --debug-frame-dir ~/Web-dashboard/data/debug_detections \
   --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
 
-
-```
-
-## Pull sortibot_debug_detections
-
-```
-rsync -av \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  pi@192.168.149.1:~/Web-dashboard/data/debug_detections/ \
-  $HOME/Downloads/sortibot_debug_detections/
 ```
 
 ## Other
@@ -87,4 +77,45 @@ python object_visual_servo_test.py \
   --home-arm-only \
   --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5
+
+
+
+OTHER POSE:
+
+python object_visual_servo_test.py \
+  --home-arm-only \
+  --home-servo-pulses "3:600,4:2000,5:1300,6:1600" \
+  --home-servo-duration 1.5
+
+
+
+
+
+
+python object_visual_servo_test.py \
+  --home-arm-only \
+  --home-pose ik \
+  --grab-home-x-cm 0 \
+  --grab-home-y-cm 12.0 \
+  --grab-home-z-cm 0.1
+
+
+
+  -----
+looking at the floor
+
+python object_visual_servo_test.py \
+  --home-arm-only \
+  --home-servo-pulses "3:800,4:2460,5:1529,6:1405" \
+  --home-servo-duration 1.5
+
+  -----
+
+
+
+
+  rsync -av \
+  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
+  pi@192.168.149.1:~/Web-dashboard/data/debug_detections/ \
+  $HOME/Downloads/sortibot_debug_detections/
 ```
