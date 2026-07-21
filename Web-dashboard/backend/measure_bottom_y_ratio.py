@@ -1,5 +1,6 @@
 import argparse
 import json
+import math
 import time
 from pathlib import Path
 
@@ -88,11 +89,82 @@ def parse_args():
         help="Optional path for an annotated frame, for example /tmp/bottom_ratio.jpg.",
     )
     parser.add_argument(
+        "--project-floor",
+        action="store_true",
+        help=(
+            "Project the YOLO box bottom-center pixel onto the floor plane and "
+            "print estimated robot-frame x/y coordinates."
+        ),
+    )
+    parser.add_argument(
+        "--camera-height-cm",
+        type=float,
+        default=None,
+        help="Camera optical-center height above the floor in cm.",
+    )
+    parser.add_argument(
+        "--camera-pitch-down-deg",
+        type=float,
+        default=None,
+        help=(
+            "Camera optical-axis downward tilt from horizontal in degrees. "
+            "0 means looking straight forward, 90 means looking straight down."
+        ),
+    )
+    parser.add_argument(
+        "--camera-forward-offset-cm",
+        type=float,
+        default=0.0,
+        help="Camera optical-center offset forward from the robot reference point.",
+    )
+    parser.add_argument(
+        "--camera-right-offset-cm",
+        type=float,
+        default=0.0,
+        help="Camera optical-center offset right from the robot centerline.",
+    )
+    parser.add_argument(
+        "--camera-yaw-deg",
+        type=float,
+        default=0.0,
+        help="Optional camera yaw correction in degrees. Positive rotates right.",
+    )
+    parser.add_argument(
+        "--camera-hfov-deg",
+        type=float,
+        default=62.0,
+        help=(
+            "Horizontal field of view used to estimate focal length when "
+            "--camera-fx-px is not provided."
+        ),
+    )
+    parser.add_argument(
+        "--camera-vfov-deg",
+        type=float,
+        default=None,
+        help=(
+            "Vertical field of view used to estimate focal length. If omitted, "
+            "it is derived from --camera-hfov-deg and frame aspect ratio."
+        ),
+    )
+    parser.add_argument("--camera-fx-px", type=float, default=None)
+    parser.add_argument("--camera-fy-px", type=float, default=None)
+    parser.add_argument("--camera-cx-px", type=float, default=None)
+    parser.add_argument("--camera-cy-px", type=float, default=None)
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print one JSON object instead of human-readable lines.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.project_floor and (
+        args.camera_height_cm is None or args.camera_pitch_down_deg is None
+    ):
+        parser.error(
+            "--project-floor requires --camera-height-cm and "
+            "--camera-pitch-down-deg"
+        )
+    return args
 
 
 def choose_detection(
@@ -127,6 +199,117 @@ def detection_measurement(frame, detection: Detection) -> dict:
     }
 
 
+def add_floor_projection(args, measurement: dict) -> None:
+    if not args.project_floor:
+        return
+    x1, _y1, x2, y2 = measurement["xyxy"]
+    bottom_center_x = (x1 + x2) / 2.0
+    projection = project_pixel_to_floor(
+        args,
+        bottom_center_x,
+        y2,
+        measurement["frame_width"],
+        measurement["frame_height"],
+    )
+    if projection is None:
+        measurement["floor_projection_ok"] = False
+        return
+    measurement["floor_projection_ok"] = True
+    measurement.update(projection)
+
+
+def camera_intrinsics_from_args(args, width: int, height: int) -> tuple[float, float, float, float]:
+    cx = args.camera_cx_px if args.camera_cx_px is not None else width / 2.0
+    cy = args.camera_cy_px if args.camera_cy_px is not None else height / 2.0
+
+    if args.camera_fx_px is not None:
+        fx = args.camera_fx_px
+    else:
+        hfov = math.radians(args.camera_hfov_deg)
+        fx = width / (2.0 * math.tan(hfov / 2.0))
+
+    if args.camera_fy_px is not None:
+        fy = args.camera_fy_px
+    else:
+        if args.camera_vfov_deg is None:
+            vfov = 2.0 * math.atan(math.tan(math.radians(args.camera_hfov_deg) / 2.0) * (height / width))
+        else:
+            vfov = math.radians(args.camera_vfov_deg)
+        fy = height / (2.0 * math.tan(vfov / 2.0))
+
+    return fx, fy, cx, cy
+
+
+def rotate_yaw(vector: tuple[float, float, float], yaw_deg: float) -> tuple[float, float, float]:
+    if abs(yaw_deg) < 1e-9:
+        return vector
+    x, y, z = vector
+    yaw = math.radians(yaw_deg)
+    cos_yaw = math.cos(yaw)
+    sin_yaw = math.sin(yaw)
+    return (
+        x * cos_yaw + y * sin_yaw,
+        -x * sin_yaw + y * cos_yaw,
+        z,
+    )
+
+
+def project_pixel_to_floor(
+    args,
+    u: float,
+    v: float,
+    width: int,
+    height: int,
+) -> dict | None:
+    if args.camera_height_cm is None or args.camera_pitch_down_deg is None:
+        raise ValueError(
+            "--project-floor requires --camera-height-cm and "
+            "--camera-pitch-down-deg"
+        )
+
+    fx, fy, cx, cy = camera_intrinsics_from_args(args, width, height)
+
+    # Camera coordinates follow OpenCV convention: x right, y down, z forward.
+    ray_cam_x = (u - cx) / fx
+    ray_cam_y = (v - cy) / fy
+    ray_cam_z = 1.0
+
+    pitch = math.radians(args.camera_pitch_down_deg)
+
+    # Robot coordinates: x right, y forward, z up.
+    # With zero pitch, camera z points forward and camera y points down.
+    ray_robot_x = ray_cam_x
+    ray_robot_y = ray_cam_z * math.cos(pitch) - ray_cam_y * math.sin(pitch)
+    ray_robot_z = -ray_cam_z * math.sin(pitch) - ray_cam_y * math.cos(pitch)
+    ray_robot_x, ray_robot_y, ray_robot_z = rotate_yaw(
+        (ray_robot_x, ray_robot_y, ray_robot_z),
+        args.camera_yaw_deg,
+    )
+
+    if ray_robot_z >= -1e-6:
+        return None
+
+    scale = args.camera_height_cm / -ray_robot_z
+    floor_x = args.camera_right_offset_cm + scale * ray_robot_x
+    floor_y = args.camera_forward_offset_cm + scale * ray_robot_y
+    floor_distance = math.hypot(floor_x, floor_y)
+
+    return {
+        "floor_x_cm": floor_x,
+        "floor_y_cm": floor_y,
+        "floor_distance_cm": floor_distance,
+        "camera_height_cm": args.camera_height_cm,
+        "camera_pitch_down_deg": args.camera_pitch_down_deg,
+        "camera_forward_offset_cm": args.camera_forward_offset_cm,
+        "camera_right_offset_cm": args.camera_right_offset_cm,
+        "camera_yaw_deg": args.camera_yaw_deg,
+        "camera_fx_px": fx,
+        "camera_fy_px": fy,
+        "camera_cx_px": cx,
+        "camera_cy_px": cy,
+    }
+
+
 def annotate_frame(frame, measurement: dict):
     annotated = frame.copy()
     x1, y1, x2, y2 = measurement["xyxy"]
@@ -145,6 +328,11 @@ def annotate_frame(frame, measurement: dict):
         f"{measurement['label']} {measurement['confidence']:.2f} "
         f"bottom_y_ratio={measurement['bottom_y_ratio']:.3f}"
     )
+    if measurement.get("floor_projection_ok"):
+        text += (
+            f" x={measurement['floor_x_cm']:.1f}cm"
+            f" y={measurement['floor_y_cm']:.1f}cm"
+        )
     cv2.putText(
         annotated,
         text,
@@ -176,6 +364,33 @@ def average_measurements(measurements: list[dict]) -> dict:
     ]:
         averaged[key] = sum(item[key] for item in measurements) / len(measurements)
     averaged["last_xyxy"] = measurements[-1]["xyxy"]
+
+    floor_measurements = [
+        item for item in measurements if item.get("floor_projection_ok")
+    ]
+    if floor_measurements:
+        averaged["floor_projection_ok"] = True
+        averaged["floor_samples"] = len(floor_measurements)
+        for key in [
+            "floor_x_cm",
+            "floor_y_cm",
+            "floor_distance_cm",
+            "camera_height_cm",
+            "camera_pitch_down_deg",
+            "camera_forward_offset_cm",
+            "camera_right_offset_cm",
+            "camera_yaw_deg",
+            "camera_fx_px",
+            "camera_fy_px",
+            "camera_cx_px",
+            "camera_cy_px",
+        ]:
+            averaged[key] = (
+                sum(item[key] for item in floor_measurements)
+                / len(floor_measurements)
+            )
+    else:
+        averaged["floor_projection_ok"] = False
     return averaged
 
 
@@ -212,10 +427,11 @@ def main() -> int:
                 continue
 
             measurement = detection_measurement(frame, detection)
+            add_floor_projection(args, measurement)
             measurements.append(measurement)
             last_frame = frame
             if not args.json:
-                print(
+                line = (
                     f"sample={len(measurements)} "
                     f"label={measurement['label']} "
                     f"conf={measurement['confidence']:.3f} "
@@ -223,6 +439,15 @@ def main() -> int:
                     f"center_x_ratio={measurement['center_x_ratio']:.4f} "
                     f"xyxy={measurement['xyxy']}"
                 )
+                if measurement.get("floor_projection_ok"):
+                    line += (
+                        f" floor_x_cm={measurement['floor_x_cm']:.2f}"
+                        f" floor_y_cm={measurement['floor_y_cm']:.2f}"
+                        f" floor_distance_cm={measurement['floor_distance_cm']:.2f}"
+                    )
+                elif args.project_floor:
+                    line += " floor_projection=not_intersecting_floor"
+                print(line)
             if len(measurements) >= max(1, args.frames):
                 break
             time.sleep(args.poll_seconds)
@@ -257,6 +482,13 @@ def main() -> int:
         print(f"bottom_y_ratio={result['bottom_y_ratio']:.4f}")
         print(f"center_x_ratio={result['center_x_ratio']:.4f}")
         print(f"box_height_ratio={result['box_height_ratio']:.4f}")
+        if result.get("floor_projection_ok"):
+            print(f"floor_samples={result['floor_samples']}")
+            print(f"floor_x_cm={result['floor_x_cm']:.2f}")
+            print(f"floor_y_cm={result['floor_y_cm']:.2f}")
+            print(f"floor_distance_cm={result['floor_distance_cm']:.2f}")
+        elif args.project_floor:
+            print("floor_projection=not_intersecting_floor")
 
     return 0
 
