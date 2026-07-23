@@ -1582,14 +1582,14 @@ internal sensor reads current shaft angle
 servo motor turns until current angle matches target angle
 ```
 
-So `1136` is not an arbitrary number to the robot code. It is a pulse width command. The controller repeatedly sends a signal to servo ID3 where the high part of the signal is about `1136` microseconds wide. The servo electronics interpret that pulse width as a target angle.
+So `1336` is not an arbitrary number to the robot code. It is a pulse width command. The controller repeatedly sends a signal to servo ID3 where the high part of the signal is about `1336` microseconds wide. The servo electronics interpret that pulse width as a target angle.
 
 For example:
 
 ```text
 ID3 currently at random angle
-you send pulse 1136
-servo ID3 treats 1136 as its target
+you send pulse 1336
+servo ID3 treats 1336 as its target
 servo ID3 rotates until its internal feedback says it reached that target
 ```
 
@@ -1598,7 +1598,7 @@ Do not use `--grab-home-x-cm`, `--grab-home-y-cm`, and `--grab-home-z-cm` as the
 ```bash
 python object_visual_servo_test.py \
   --home-arm-only \
-  --home-servo-pulses "3:1136,4:2460,5:1529,6:1405" \
+  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5
 ```
 
@@ -1610,7 +1610,11 @@ python object_visual_servo_test.py \
   --home-pose my_home
 ```
 
-For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default. The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops in the pickup zone. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
+For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default.
+
+The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_y_cm`, drives only part of the estimated distance while far away, stops, re-detects, and repeats. Once the object is inside the trusted near range, it drives to `floor_y_cm - --distance-standoff-cm`, stops, and starts the arm grab sequence. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
+
+The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab. After closing the gripper, the script lifts the object a little and returns the arm home; later behavior can be added after this point.
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -1618,30 +1622,27 @@ source .venv/bin/activate
 
 python object_visual_servo_test.py \
   --motion auto \
+  --approach-mode floor-distance \
   --detector yolo \
   --classification-mode detector-label \
   --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
   --max-seconds 25 \
   --conf 0.35 \
-  --target-x-ratio 0.50 \
-  --target-bottom-ratio 0.94 \
-  --x-deadband-ratio 0.06 \
-  --bottom-deadband-ratio 0.04 \
-  --close-bottom-error-ratio 0.0 \
-  --search-y-speed 16 \
-  --max-x-speed 48 \
-  --min-x-speed 32 \
-  --max-y-speed 48 \
-  --min-y-speed 32 \
-  --home-servo-pulses "3:1136,4:2460,5:1529,6:1405" \
+  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5 \
-  --kp-x 120 \
-  --kp-y 45 \
-  --uncentered-y-scale 0.3 \
+  --open-gripper-before-approach \
+  --camera-height-cm 19.6 \
+  --camera-pitch-down-deg 17.2 \
+  --camera-hfov-deg 79.1 \
+  --distance-reliable-cm 30.0 \
+  --distance-standoff-cm 2.0 \
+  --distance-far-step-fraction 0.5 \
+  --distance-max-step-cm 25.0 \
+  --distance-drive-speed 24 \
+  --distance-drive-cm-per-second 10.0 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
-  --post-pickup-drive-seconds 1.0 \
   --speed 24 \
   --direction 90 \
   --home-arm-before-approach \
@@ -1674,15 +1675,23 @@ Tune these values one at a time:
 - `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
 - `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
 - `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
-- `--post-pickup-drive-seconds`: after the existing pickup-zone condition is reached, continue strictly forward for this many seconds before stopping and grabbing. The default is `1.0`; use `0` to disable this extra final push.
+- `--approach-mode floor-distance`: use floor projection instead of chassis x/bottom PID for the last-mile approach.
+- `--camera-height-cm`, `--camera-pitch-down-deg`, `--camera-hfov-deg`: camera calibration values for the fixed home pose. If the camera or home pose changes, recalibrate these.
+- `--distance-reliable-cm`: once projected `floor_y_cm` is at or below this value, trust it for the final move. Start with `30.0` because the recent measured tests were accurate around `20-32 cm`.
+- `--distance-standoff-cm`: leave this much projected distance before the object when the chassis stops and the arm starts grabbing.
+- `--distance-far-step-fraction`: when the object is farther than the reliable range, move only this fraction of projected `floor_y_cm`, then stop and remeasure.
+- `--distance-max-step-cm`: maximum single forward move. Keep this bounded so one bad far estimate cannot cause a long overshoot.
+- `--distance-drive-speed`: Hiwonder forward speed used during timed distance moves.
+- `--distance-drive-cm-per-second`: measured real forward speed for `--distance-drive-speed`. Tune this on the actual floor; if it is wrong, the robot will drive the wrong physical distance.
+- `--post-pickup-drive-seconds`: deprecated. Keep it omitted or `0`; the floor-distance approach ignores the old final push.
 - `--arm-visual-align`: after the chassis has stopped, the arm opens the gripper, moves above the grab coordinate, looks through the camera again, and nudges the IK `x/y` coordinate before lowering to grab.
 - `--arm-align-target-x-ratio`, `--arm-align-target-y-ratio`: where the object center should appear in the camera frame during arm alignment. Start with `0.50,0.55`; tune these if the gripper is correctly positioned while the object appears slightly off-center in the camera.
 - `--arm-align-deadband-ratio`: how close the object center must be to the arm-alignment target point before the script stops nudging and grabs.
 - `--arm-align-step-cm`: maximum arm-coordinate movement per alignment nudge. Keep this small; `0.4` means each correction is at most 4 mm.
 - `--invert-arm-align-x`, `--invert-arm-align-y`: add one of these if an arm nudge moves the object farther from the target point in the camera image.
 - `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm before the camera loop starts.
-- `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1136`, `ID4=2460`, `ID5=1529`, `ID6=1405`. ID1/gripper is not included.
-- `--home-servo-pulses`: override the named home pose with measured values, for example `3:1136,4:2460,5:1529,6:1405`.
+- `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1336`, `ID4=2460`, `ID5=1529`, `ID6=1480`. ID1/gripper is not included.
+- `--home-servo-pulses`: override the named home pose with measured values, for example `3:1336,4:2460,5:1529,6:1480`.
 - `--home-servo-duration`: how long, in seconds, the controller should take to move from the current joint positions to the requested pulse positions. For example, `--home-servo-duration 1.5` means move over about 1.5 seconds; `1.0` means move faster, over about 1 second.
 - `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm`: only used when `--home-pose ik` is selected.
 - `--speed`: controls the no-object search speed when using the Hiwonder forward command.

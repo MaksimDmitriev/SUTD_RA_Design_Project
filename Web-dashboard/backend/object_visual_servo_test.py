@@ -11,6 +11,7 @@ from contrast_detector import ContrastBlobDetector
 from robot_ik import ArmCoordinate, KinematicsArm
 from robot_motion import create_motion_backend
 from yolo_detector import Detection, YoloDetector, crop_detection
+from measure_bottom_y_ratio import project_pixel_to_floor
 
 
 @dataclass
@@ -24,7 +25,7 @@ class TargetPrediction:
 HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
     # Measured from the MasterPi app after positioning the arm in the desired
     # camera-home pose. ID1/gripper is intentionally omitted.
-    "my_home": [(3, 1136), (4, 2460), (5, 1529), (6, 1405)],
+    "my_home": [(3, 1336), (4, 2460), (5, 1529), (6, 1480)],
 }
 
 
@@ -41,7 +42,7 @@ def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
         except ValueError as exc:
             raise argparse.ArgumentTypeError(
                 "servo pulses must use servo_id:pulse pairs, for example "
-                "3:1136,4:2460,5:1529,6:1405"
+                "3:1336,4:2460,5:1529,6:1480"
             ) from exc
         if servo_id < 1 or servo_id > 6:
             raise argparse.ArgumentTypeError("servo_id must be between 1 and 6")
@@ -104,6 +105,16 @@ def parse_args():
         choices=["auto", "hiwonder", "dry-run"],
         default="auto",
     )
+    parser.add_argument(
+        "--approach-mode",
+        choices=["visual-servo", "floor-distance"],
+        default="visual-servo",
+        help=(
+            "visual-servo uses image x/bottom PID. floor-distance projects the "
+            "detected box onto the floor plane, drives partway, remeasures, then "
+            "drives to a near standoff before grabbing."
+        ),
+    )
     parser.add_argument("--speed", type=int, default=35)
     parser.add_argument(
         "--direction",
@@ -150,11 +161,11 @@ def parse_args():
     parser.add_argument(
         "--post-pickup-drive-seconds",
         type=float,
-        default=1.0,
+        default=0.0,
         help=(
             "After the existing pickup-zone condition is reached, keep driving "
             "strictly forward for this many seconds before stopping/grabbing. "
-            "Use 0 to disable."
+            "Deprecated; use 0. The distance approach ignores this option."
         ),
     )
     parser.add_argument(
@@ -284,7 +295,7 @@ def parse_args():
         default=None,
         help=(
             "Optional comma-separated servo_id:pulse startup pose, for example "
-            "3:1136,4:2460,5:1529,6:1405. Overrides --home-pose."
+            "3:1336,4:2460,5:1529,6:1480. Overrides --home-pose."
         ),
     )
     parser.add_argument("--home-servo-duration", type=float, default=1.5)
@@ -393,6 +404,119 @@ def parse_args():
     )
     parser.add_argument("--gripper-open-pulse", type=int, default=2000)
     parser.add_argument("--gripper-close-pulse", type=int, default=1500)
+    parser.add_argument(
+        "--distance-reliable-cm",
+        type=float,
+        default=30.0,
+        help=(
+            "For --approach-mode floor-distance, trust the projected floor "
+            "distance as final only when the object is at or below this y distance."
+        ),
+    )
+    parser.add_argument(
+        "--distance-standoff-cm",
+        type=float,
+        default=2.0,
+        help=(
+            "For --approach-mode floor-distance, stop this many cm before the "
+            "projected object y distance, then start the arm grab sequence."
+        ),
+    )
+    parser.add_argument(
+        "--distance-far-step-fraction",
+        type=float,
+        default=0.5,
+        help=(
+            "For --approach-mode floor-distance, when the object is outside the "
+            "reliable range, drive this fraction of the projected y distance and "
+            "then remeasure."
+        ),
+    )
+    parser.add_argument(
+        "--distance-max-step-cm",
+        type=float,
+        default=25.0,
+        help="Maximum single forward move in cm for floor-distance approach.",
+    )
+    parser.add_argument(
+        "--distance-min-step-cm",
+        type=float,
+        default=2.0,
+        help=(
+            "If the remaining floor-distance move is below this value, stop and "
+            "grab instead of trying to command a tiny chassis move."
+        ),
+    )
+    parser.add_argument(
+        "--distance-drive-speed",
+        type=float,
+        default=None,
+        help=(
+            "Forward Hiwonder speed used for floor-distance timed moves. Defaults "
+            "to --max-y-speed."
+        ),
+    )
+    parser.add_argument(
+        "--distance-drive-cm-per-second",
+        type=float,
+        default=10.0,
+        help=(
+            "Measured real forward speed for --distance-drive-speed. The script "
+            "uses move_cm / this value to choose drive time."
+        ),
+    )
+    parser.add_argument(
+        "--camera-height-cm",
+        type=float,
+        default=None,
+        help="Camera optical-center height above the floor in cm.",
+    )
+    parser.add_argument(
+        "--camera-pitch-down-deg",
+        type=float,
+        default=None,
+        help=(
+            "Camera optical-axis downward tilt from horizontal in degrees. "
+            "0 means looking straight forward, 90 means looking straight down."
+        ),
+    )
+    parser.add_argument(
+        "--camera-forward-offset-cm",
+        type=float,
+        default=0.0,
+        help="Camera optical-center offset forward from the robot reference point.",
+    )
+    parser.add_argument(
+        "--camera-right-offset-cm",
+        type=float,
+        default=0.0,
+        help="Camera optical-center offset right from the robot centerline.",
+    )
+    parser.add_argument(
+        "--camera-yaw-deg",
+        type=float,
+        default=0.0,
+        help="Optional camera yaw correction in degrees. Positive rotates right.",
+    )
+    parser.add_argument(
+        "--camera-hfov-deg",
+        type=float,
+        default=62.0,
+        help="Horizontal camera field of view used for floor projection.",
+    )
+    parser.add_argument(
+        "--camera-vfov-deg",
+        type=float,
+        default=None,
+        help=(
+            "Vertical field of view. If omitted, it is derived from "
+            "--camera-hfov-deg and frame aspect ratio."
+        ),
+    )
+    parser.add_argument("--camera-fx-px", type=float, default=None)
+    parser.add_argument("--camera-fy-px", type=float, default=None)
+    parser.add_argument("--camera-cx-px", type=float, default=None)
+    parser.add_argument("--camera-cy-px", type=float, default=None)
     return parser.parse_args()
 
 
@@ -473,6 +597,44 @@ def is_pickup_ready(geometry: dict, args) -> bool:
         return False
 
     return abs(geometry["x_error_ratio"]) <= args.x_deadband_ratio
+
+
+def floor_projection_from_detection(args, frame, detection: Detection) -> dict | None:
+    height, width = frame.shape[:2]
+    x1, _y1, x2, y2 = detection.xyxy
+    bottom_center_x = (x1 + x2) / 2.0
+    return project_pixel_to_floor(args, bottom_center_x, y2, width, height)
+
+
+def distance_approach_move_cm(projection: dict, args) -> tuple[float, str]:
+    floor_y = projection["floor_y_cm"]
+    if floor_y <= args.distance_standoff_cm + args.distance_min_step_cm:
+        return 0.0, "inside standoff window"
+
+    if floor_y <= args.distance_reliable_cm:
+        move_cm = floor_y - args.distance_standoff_cm
+        reason = "reliable final move"
+    else:
+        fraction = clamp(args.distance_far_step_fraction, 0.05, 0.95)
+        move_cm = floor_y * fraction
+        reason = "far partial move"
+
+    move_cm = clamp(move_cm, 0.0, args.distance_max_step_cm)
+    if move_cm < args.distance_min_step_cm:
+        return 0.0, f"{reason}; below min step"
+    return move_cm, reason
+
+
+def drive_forward_for_distance(motion, move_cm: float, speed: float, cm_per_second: float) -> float:
+    if move_cm <= 0:
+        return 0.0
+    if cm_per_second <= 0:
+        raise ValueError("--distance-drive-cm-per-second must be greater than 0")
+    duration_seconds = move_cm / cm_per_second
+    motion.translate(0.0, speed)
+    time.sleep(duration_seconds)
+    motion.stop()
+    return duration_seconds
 
 
 def coordinate_above_grab(arm: KinematicsArm, coordinate: ArmCoordinate) -> ArmCoordinate:
@@ -732,6 +894,88 @@ def save_latest_debug_frame(path: str | None, frame, detection, geometry, text: 
     cv2.imwrite(str(output_path), annotate_frame(frame, detection, geometry, text))
 
 
+def finish_target(
+    args,
+    camera: Camera,
+    detector,
+    motion,
+    frame,
+    detection: Detection,
+    geometry: dict,
+    active_prediction: TargetPrediction,
+    approach_labels: set[str],
+    final_forward_speed: float = 0.0,
+) -> int:
+    if (
+        args.approach_mode != "floor-distance"
+        and args.post_pickup_drive_seconds > 0
+        and final_forward_speed > 0.001
+    ):
+        print(
+            "[visual-servo] pickup zone reached; final drive "
+            f"{args.post_pickup_drive_seconds:.2f}s "
+            f"cmd=(0.0,{final_forward_speed:.1f})"
+        )
+        motion.translate(0.0, final_forward_speed)
+        time.sleep(args.post_pickup_drive_seconds)
+
+    motion.stop()
+    detected_at = datetime.now().isoformat(timespec="seconds")
+    text = (
+        f"{detection.label} {detection.confidence:.2f} "
+        f"{active_prediction.label} {active_prediction.confidence:.2f} "
+        f"xerr={geometry['x_error_ratio']:.2f} "
+        f"berr={geometry['bottom_error_ratio']:.2f}"
+    )
+    save_debug_frame(args.debug_frame_dir, frame, detection, geometry, text)
+    print(
+        f"[{detected_at}] stopped on {detection.label} "
+        f"confidence={detection.confidence:.3f} box={detection.xyxy}"
+    )
+    print(
+        f"[{detected_at}] target classification "
+        f"{active_prediction.label.title()} "
+        f"confidence={active_prediction.confidence:.3f} "
+        f"prompt={active_prediction.prompt!r}"
+    )
+    print(f"[{detected_at}] scores={active_prediction.scores}")
+
+    if args.grab:
+        arm = create_arm(args)
+        if args.use_camera_transform:
+            coordinate = arm.pixel_to_arm_coordinate(
+                geometry["center_x"],
+                geometry["bottom_y"],
+                (geometry["width"], geometry["height"]),
+                z=args.grab_z_cm,
+            )
+        else:
+            coordinate = ArmCoordinate(
+                args.grab_x_cm,
+                args.grab_y_cm,
+                args.grab_z_cm,
+            )
+        print(f"[{detected_at}] grabbing at {coordinate}")
+        final_coordinate = grab_with_optional_alignment(
+            args,
+            camera,
+            detector,
+            arm,
+            coordinate,
+            active_prediction.label,
+            approach_labels,
+        )
+        if args.arm_visual_align:
+            print(
+                f"[{detected_at}] arm visual align final coordinate "
+                f"{final_coordinate}"
+            )
+    else:
+        print(f"[{detected_at}] grab disabled; leaving object in pickup zone")
+
+    return 0
+
+
 def main() -> int:
     args = parse_args()
     classification_mode = args.classification_mode
@@ -750,6 +994,13 @@ def main() -> int:
         for label in args.approach_labels.split(",")
         if label.strip()
     }
+    if args.approach_mode == "floor-distance" and (
+        args.camera_height_cm is None or args.camera_pitch_down_deg is None
+    ):
+        raise SystemExit(
+            "--approach-mode floor-distance requires --camera-height-cm and "
+            "--camera-pitch-down-deg"
+        )
 
     if args.home_arm_before_approach or args.home_arm_only:
         arm = create_arm(args)
@@ -883,6 +1134,25 @@ def main() -> int:
                 continue
 
             detection = detections[0]
+            if active_prediction is not None:
+                tracked_detection = best_detection_for_alignment(
+                    detections,
+                    active_prediction.label,
+                    approach_labels,
+                )
+                if tracked_detection is None:
+                    stable_count = 0
+                    pickup_count = 0
+                    motion.stop()
+                    if time.monotonic() - last_log_at >= 1.0:
+                        print(
+                            "[visual-servo] target label missing after "
+                            "classification; stopping"
+                        )
+                        last_log_at = time.monotonic()
+                    time.sleep(args.poll_seconds)
+                    continue
+                detection = tracked_detection
             stable_count += 1
             geometry = detection_geometry(frame, detection, args)
             x_speed, y_speed = command_from_geometry(geometry, args)
@@ -962,6 +1232,76 @@ def main() -> int:
                     "approaching pickup zone"
                 )
 
+            if args.approach_mode == "floor-distance":
+                projection = floor_projection_from_detection(args, frame, detection)
+                if projection is None:
+                    pickup_count = 0
+                    motion.stop()
+                    print(
+                        "[visual-servo] floor-distance projection unavailable; "
+                        "stopping and remeasuring"
+                    )
+                    time.sleep(args.poll_seconds)
+                    continue
+
+                move_cm, move_reason = distance_approach_move_cm(projection, args)
+                ready = move_cm <= 0.0
+                pickup_count = pickup_count + 1 if ready else 0
+                drive_speed = (
+                    args.distance_drive_speed
+                    if args.distance_drive_speed is not None
+                    else args.max_y_speed
+                )
+                print(
+                    "[visual-servo] "
+                    f"target={active_prediction.label} "
+                    f"conf={detection.confidence:.3f} "
+                    f"floor_x={projection['floor_x_cm']:.2f}cm "
+                    f"floor_y={projection['floor_y_cm']:.2f}cm "
+                    f"move={move_cm:.2f}cm reason={move_reason!r} "
+                    f"pickup={pickup_count}/{args.pickup_frames}"
+                )
+
+                if pickup_count >= args.pickup_frames:
+                    return finish_target(
+                        args,
+                        camera,
+                        detector,
+                        motion,
+                        frame,
+                        detection,
+                        geometry,
+                        active_prediction,
+                        approach_labels,
+                    )
+
+                if move_cm > 0.0:
+                    save_debug_frame(
+                        args.debug_frame_dir,
+                        frame,
+                        detection,
+                        geometry,
+                        (
+                            "floor-distance "
+                            f"y={projection['floor_y_cm']:.1f}cm "
+                            f"move={move_cm:.1f}cm"
+                        ),
+                    )
+                    duration = drive_forward_for_distance(
+                        motion,
+                        move_cm,
+                        drive_speed,
+                        args.distance_drive_cm_per_second,
+                    )
+                    print(
+                        "[visual-servo] floor-distance drove forward "
+                        f"{move_cm:.2f}cm for {duration:.2f}s "
+                        f"at speed={drive_speed:.1f}; remeasuring"
+                    )
+                    stable_count = 0
+                    time.sleep(args.poll_seconds)
+                    continue
+
             ready = is_pickup_ready(geometry, args)
             pickup_count = pickup_count + 1 if ready else 0
 
@@ -977,69 +1317,18 @@ def main() -> int:
 
             if pickup_count >= args.pickup_frames:
                 final_forward_speed = last_forward_speed or args.min_y_speed
-                if args.post_pickup_drive_seconds > 0 and final_forward_speed > 0.001:
-                    print(
-                        "[visual-servo] pickup zone reached; final drive "
-                        f"{args.post_pickup_drive_seconds:.2f}s "
-                        f"cmd=(0.0,{final_forward_speed:.1f})"
-                    )
-                    motion.translate(0.0, final_forward_speed)
-                    time.sleep(args.post_pickup_drive_seconds)
-                motion.stop()
-                detected_at = datetime.now().isoformat(timespec="seconds")
-                text = (
-                    f"{detection.label} {detection.confidence:.2f} "
-                    f"{active_prediction.label} {active_prediction.confidence:.2f} "
-                    f"xerr={geometry['x_error_ratio']:.2f} "
-                    f"berr={geometry['bottom_error_ratio']:.2f}"
+                return finish_target(
+                    args,
+                    camera,
+                    detector,
+                    motion,
+                    frame,
+                    detection,
+                    geometry,
+                    active_prediction,
+                    approach_labels,
+                    final_forward_speed=final_forward_speed,
                 )
-                save_debug_frame(args.debug_frame_dir, frame, detection, geometry, text)
-                print(
-                    f"[{detected_at}] stopped on {detection.label} "
-                    f"confidence={detection.confidence:.3f} box={detection.xyxy}"
-                )
-                print(
-                    f"[{detected_at}] target classification "
-                    f"{active_prediction.label.title()} "
-                    f"confidence={active_prediction.confidence:.3f} "
-                    f"prompt={active_prediction.prompt!r}"
-                )
-                print(f"[{detected_at}] scores={active_prediction.scores}")
-
-                if args.grab:
-                    arm = create_arm(args)
-                    if args.use_camera_transform:
-                        coordinate = arm.pixel_to_arm_coordinate(
-                            geometry["center_x"],
-                            geometry["bottom_y"],
-                            (geometry["width"], geometry["height"]),
-                            z=args.grab_z_cm,
-                        )
-                    else:
-                        coordinate = ArmCoordinate(
-                            args.grab_x_cm,
-                            args.grab_y_cm,
-                            args.grab_z_cm,
-                        )
-                    print(f"[{detected_at}] grabbing at {coordinate}")
-                    final_coordinate = grab_with_optional_alignment(
-                        args,
-                        camera,
-                        detector,
-                        arm,
-                        coordinate,
-                        active_prediction.label,
-                        approach_labels,
-                    )
-                    if args.arm_visual_align:
-                        print(
-                            f"[{detected_at}] arm visual align final coordinate "
-                            f"{final_coordinate}"
-                        )
-                else:
-                    print(f"[{detected_at}] grab disabled; leaving object in pickup zone")
-
-                return 0
 
             if y_speed > 0.001:
                 last_forward_speed = y_speed
