@@ -606,14 +606,16 @@ def floor_projection_from_detection(args, frame, detection: Detection) -> dict |
     return project_pixel_to_floor(args, bottom_center_x, y2, width, height)
 
 
-def distance_approach_move_cm(projection: dict, args) -> tuple[float, str]:
+def distance_approach_move_cm(projection: dict, args) -> tuple[float, str, bool]:
     floor_y = projection["floor_y_cm"]
     if floor_y <= args.distance_standoff_cm + args.distance_min_step_cm:
-        return 0.0, "inside standoff window"
+        return 0.0, "inside standoff window", True
 
+    finishes_approach = False
     if floor_y <= args.distance_reliable_cm:
         move_cm = floor_y - args.distance_standoff_cm
         reason = "reliable final move"
+        finishes_approach = move_cm <= args.distance_max_step_cm
     else:
         fraction = clamp(args.distance_far_step_fraction, 0.05, 0.95)
         move_cm = floor_y * fraction
@@ -621,8 +623,8 @@ def distance_approach_move_cm(projection: dict, args) -> tuple[float, str]:
 
     move_cm = clamp(move_cm, 0.0, args.distance_max_step_cm)
     if move_cm < args.distance_min_step_cm:
-        return 0.0, f"{reason}; below min step"
-    return move_cm, reason
+        return 0.0, f"{reason}; below min step", finishes_approach
+    return move_cm, reason, finishes_approach
 
 
 def drive_forward_for_distance(motion, move_cm: float, speed: float, cm_per_second: float) -> float:
@@ -1244,7 +1246,10 @@ def main() -> int:
                     time.sleep(args.poll_seconds)
                     continue
 
-                move_cm, move_reason = distance_approach_move_cm(projection, args)
+                move_cm, move_reason, finishes_approach = distance_approach_move_cm(
+                    projection,
+                    args,
+                )
                 ready = move_cm <= 0.0
                 pickup_count = pickup_count + 1 if ready else 0
                 drive_speed = (
@@ -1298,6 +1303,22 @@ def main() -> int:
                         f"{move_cm:.2f}cm for {duration:.2f}s "
                         f"at speed={drive_speed:.1f}; remeasuring"
                     )
+                    if finishes_approach:
+                        print(
+                            "[visual-servo] floor-distance final standoff reached; "
+                            "starting finish/grab sequence"
+                        )
+                        return finish_target(
+                            args,
+                            camera,
+                            detector,
+                            motion,
+                            frame,
+                            detection,
+                            geometry,
+                            active_prediction,
+                            approach_labels,
+                        )
                     stable_count = 0
                     time.sleep(args.poll_seconds)
                     continue
