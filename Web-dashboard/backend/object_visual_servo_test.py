@@ -28,6 +28,8 @@ HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
     "my_home": [(3, 1336), (4, 2460), (5, 1529), (6, 1480)],
 }
 
+FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 3.5
+
 
 def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
     positions = []
@@ -414,15 +416,6 @@ def parse_args():
         ),
     )
     parser.add_argument(
-        "--distance-standoff-cm",
-        type=float,
-        default=2.0,
-        help=(
-            "For --approach-mode floor-distance, stop this many cm before the "
-            "projected object y distance, then start the arm grab sequence."
-        ),
-    )
-    parser.add_argument(
         "--distance-far-step-fraction",
         type=float,
         default=0.5,
@@ -608,20 +601,19 @@ def floor_projection_from_detection(args, frame, detection: Detection) -> dict |
 
 def distance_approach_move_cm(projection: dict, args) -> tuple[float, str, bool]:
     floor_y = projection["floor_y_cm"]
-    if floor_y <= args.distance_standoff_cm + args.distance_min_step_cm:
-        return 0.0, "inside standoff window", True
+    if floor_y <= args.distance_min_step_cm:
+        return 0.0, "inside final window", True
 
     finishes_approach = False
     if floor_y <= args.distance_reliable_cm:
-        move_cm = floor_y - args.distance_standoff_cm
+        move_cm = floor_y + FLOOR_DISTANCE_FINAL_OVERSHOOT_CM
         reason = "reliable final move"
-        finishes_approach = move_cm <= args.distance_max_step_cm
+        finishes_approach = True
     else:
         fraction = clamp(args.distance_far_step_fraction, 0.05, 0.95)
-        move_cm = floor_y * fraction
+        move_cm = clamp(floor_y * fraction, 0.0, args.distance_max_step_cm)
         reason = "far partial move"
 
-    move_cm = clamp(move_cm, 0.0, args.distance_max_step_cm)
     if move_cm < args.distance_min_step_cm:
         return 0.0, f"{reason}; below min step", finishes_approach
     return move_cm, reason, finishes_approach
@@ -1298,14 +1290,11 @@ def main() -> int:
                         drive_speed,
                         args.distance_drive_cm_per_second,
                     )
-                    print(
-                        "[visual-servo] floor-distance drove forward "
-                        f"{move_cm:.2f}cm for {duration:.2f}s "
-                        f"at speed={drive_speed:.1f}; remeasuring"
-                    )
                     if finishes_approach:
                         print(
-                            "[visual-servo] floor-distance final standoff reached; "
+                            "[visual-servo] floor-distance final move complete "
+                            f"({move_cm:.2f}cm for {duration:.2f}s "
+                            f"at speed={drive_speed:.1f}); "
                             "starting finish/grab sequence"
                         )
                         return finish_target(
@@ -1319,6 +1308,11 @@ def main() -> int:
                             active_prediction,
                             approach_labels,
                         )
+                    print(
+                        "[visual-servo] floor-distance drove forward "
+                        f"{move_cm:.2f}cm for {duration:.2f}s "
+                        f"at speed={drive_speed:.1f}; remeasuring"
+                    )
                     stable_count = 0
                     time.sleep(args.poll_seconds)
                     continue

@@ -1612,7 +1612,7 @@ python object_visual_servo_test.py \
 
 For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default.
 
-The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_y_cm`, drives only part of the estimated distance while far away, stops, re-detects, and repeats. Once the object is inside the trusted near range, it drives to `floor_y_cm - --distance-standoff-cm`, stops, and starts the arm grab sequence. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
+The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_y_cm`, drives only part of the estimated distance while far away, stops, re-detects, and repeats. Once the object is inside the trusted near range, it drives to `floor_y_cm + 3 cm`, stops, and starts the arm grab sequence. The extra 3 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
 
 The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab. After closing the gripper, the script lifts the object a little and returns the arm home; later behavior can be added after this point.
 
@@ -1635,7 +1635,6 @@ python object_visual_servo_test.py \
   --camera-pitch-down-deg 17.2 \
   --camera-hfov-deg 79.1 \
   --distance-reliable-cm 30.0 \
-  --distance-standoff-cm 2.0 \
   --distance-far-step-fraction 0.5 \
   --distance-max-step-cm 25.0 \
   --distance-drive-speed 24 \
@@ -1678,7 +1677,6 @@ Tune these values one at a time:
 - `--approach-mode floor-distance`: use floor projection instead of chassis x/bottom PID for the last-mile approach.
 - `--camera-height-cm`, `--camera-pitch-down-deg`, `--camera-hfov-deg`: camera calibration values for the fixed home pose. If the camera or home pose changes, recalibrate these.
 - `--distance-reliable-cm`: once projected `floor_y_cm` is at or below this value, trust it for the final move. Start with `30.0` because the recent measured tests were accurate around `20-32 cm`.
-- `--distance-standoff-cm`: leave this much projected distance before the object when the chassis stops and the arm starts grabbing.
 - `--distance-far-step-fraction`: when the object is farther than the reliable range, move only this fraction of projected `floor_y_cm`, then stop and remeasure.
 - `--distance-max-step-cm`: maximum single forward move. Keep this bounded so one bad far estimate cannot cause a long overshoot.
 - `--distance-drive-speed`: Hiwonder forward speed used during timed distance moves.
