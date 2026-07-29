@@ -29,6 +29,17 @@ HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
 }
 
 FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 3.5
+POST_GRAB_WRIST_POSE: list[tuple[int, int]] = [(5, 1500)]
+POST_GRAB_TRASH_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 2500)]
+POST_GRAB_USEFUL_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 500)]
+POST_GRAB_GRIPPER_OPEN_PULSE = 2500
+POST_GRAB_HOME_POSE: list[tuple[int, int]] = [
+    (1, POST_GRAB_GRIPPER_OPEN_PULSE),
+    (3, 1336),
+    (4, 2460),
+    (5, 1529),
+    (6, 1480),
+]
 
 
 def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
@@ -639,6 +650,50 @@ def coordinate_above_grab(arm: KinematicsArm, coordinate: ArmCoordinate) -> ArmC
     )
 
 
+def post_grab_pose_for_label(label: str) -> list[tuple[int, int]]:
+    if "trash" in label.lower():
+        return POST_GRAB_TRASH_POSE
+    return POST_GRAB_USEFUL_POSE
+
+
+def release_and_return_home_after_grab(
+    args,
+    arm: KinematicsArm,
+    target_label: str,
+) -> None:
+    drop_pose = post_grab_pose_for_label(target_label)
+    print(
+        "[visual-servo] post-grab wrist pose "
+        f"{POST_GRAB_WRIST_POSE}"
+    )
+    arm.set_servo_pulses(
+        POST_GRAB_WRIST_POSE,
+        duration_seconds=args.home_servo_duration,
+    )
+    print(
+        "[visual-servo] post-grab drop pose for "
+        f"{target_label}: {drop_pose}"
+    )
+    arm.set_servo_pulses(
+        drop_pose,
+        duration_seconds=args.home_servo_duration,
+    )
+    print("[visual-servo] releasing gripper")
+    arm.set_servo_pulse(
+        1,
+        POST_GRAB_GRIPPER_OPEN_PULSE,
+        duration_seconds=0.5,
+    )
+    print(
+        "[visual-servo] returning arm to camera home servo pose "
+        f"{POST_GRAB_HOME_POSE}"
+    )
+    arm.set_servo_pulses(
+        POST_GRAB_HOME_POSE,
+        duration_seconds=args.home_servo_duration,
+    )
+
+
 def best_detection_for_alignment(
     detections: list[Detection],
     target_label: str,
@@ -829,7 +884,7 @@ def grab_with_optional_alignment(
         pitch_max=args.grab_pitch_max,
         move_time_ms=800,
     )
-    arm.move_home()
+    release_and_return_home_after_grab(args, arm, target_label)
     return coordinate
 
 

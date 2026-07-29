@@ -1614,7 +1614,13 @@ For the actual detect, approach, and grab run, keep `--home-arm-before-approach`
 
 The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_y_cm`, drives only part of the estimated distance while far away, stops, re-detects, and repeats. Once the object is inside the trusted near range, it drives to `floor_y_cm + 3 cm`, stops, and starts the arm grab sequence. The extra 3 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
 
-The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab. After closing the gripper, the script lifts the object a little and returns the arm home; later behavior can be added after this point.
+The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
+
+After closing the gripper, the script lifts the object, moves to a release pose, opens the gripper, then returns to the raw camera home pose. The release pose depends on the detector label:
+
+- `purple_trash`: first set `ID5=1500`, then set `ID3=500, ID4=2200, ID6=2500`.
+- `red_useful`: first set `ID5=1500`, then set `ID3=500, ID4=2200, ID6=500`.
+- After release: set `ID1=2500, ID3=1336, ID4=2460, ID5=1529, ID6=1480`.
 
 ```bash
 cd ~/Web-dashboard/backend
@@ -1628,7 +1634,7 @@ python object_visual_servo_test.py \
   --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
   --max-seconds 25 \
   --conf 0.35 \
-  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
+  --home-servo-pulses "1:2500,3:1336,4:2460,5:1529,6:1480" \
   --home-servo-duration 1.5 \
   --open-gripper-before-approach \
   --camera-height-cm 19.6 \
@@ -1638,7 +1644,7 @@ python object_visual_servo_test.py \
   --distance-far-step-fraction 0.5 \
   --distance-max-step-cm 25.0 \
   --distance-drive-speed 24 \
-  --distance-drive-cm-per-second 10.0 \
+  --distance-drive-cm-per-second 19.0 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
