@@ -1612,7 +1612,7 @@ python object_visual_servo_test.py \
 
 For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default.
 
-The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_y_cm`, drives only part of the estimated distance while far away, stops, re-detects, and repeats. Once the object is inside the trusted near range, it drives to `floor_y_cm + 3 cm`, stops, and starts the arm grab sequence. The extra 3 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
+The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_x_cm` and `floor_y_cm`, drives only part of the estimated forward distance while far away, stops, re-detects, and repeats. Inside the configured heading-correction range, it uses `floor_x_cm` to estimate the angle to the object, rotates a little, stops, and remeasures before driving straight. Once the object is inside the trusted near range, it drives to `floor_y_cm + 3.5 cm`, stops, and starts the arm grab sequence. The extra 3.5 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
 
 The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
 
@@ -1645,6 +1645,12 @@ python object_visual_servo_test.py \
   --distance-max-step-cm 25.0 \
   --distance-drive-speed 24 \
   --distance-drive-cm-per-second 19.0 \
+  --distance-heading-deadband-cm 4.0 \
+  --distance-heading-min-y-cm 8.0 \
+  --distance-heading-max-y-cm 50.0 \
+  --distance-heading-max-deg 12.0 \
+  --distance-heading-yaw-rate 0.4 \
+  --distance-heading-deg-per-second 45.0 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
   --pickup-frames 1 \
@@ -1687,6 +1693,12 @@ Tune these values one at a time:
 - `--distance-max-step-cm`: maximum single forward move. Keep this bounded so one bad far estimate cannot cause a long overshoot.
 - `--distance-drive-speed`: Hiwonder forward speed used during timed distance moves.
 - `--distance-drive-cm-per-second`: measured real forward speed for `--distance-drive-speed`. Tune this on the actual floor; if it is wrong, the robot will drive the wrong physical distance.
+- `--distance-heading-deadband-cm`: ignore horizontal projected offset while `abs(floor_x_cm)` is this small or smaller.
+- `--distance-heading-min-y-cm`, `--distance-heading-max-y-cm`: only rotate from `floor_x_cm` inside this forward-distance range. This avoids noisy far-away correction and avoids turning when the object is already under the camera.
+- `--distance-heading-max-deg`: maximum single turn before stopping and remeasuring.
+- `--distance-heading-yaw-rate`: Hiwonder yaw speed used for the turn. The SDK uses about `-2..2`; keep this conservative.
+- `--distance-heading-deg-per-second`: measured real turn rate for the selected yaw rate. If this is wrong, the angle estimate can be correct but the robot will turn the wrong physical amount.
+- `--invert-distance-heading`: add this if `floor_x_cm` correction turns the robot away from the object.
 - `--post-pickup-drive-seconds`: deprecated. Keep it omitted or `0`; the floor-distance approach ignores the old final push.
 - `--arm-visual-align`: after the chassis has stopped, the arm opens the gripper, moves above the grab coordinate, looks through the camera again, and nudges the IK `x/y` coordinate before lowering to grab.
 - `--arm-align-target-x-ratio`, `--arm-align-target-y-ratio`: where the object center should appear in the camera frame during arm alignment. Start with `0.50,0.55`; tune these if the gripper is correctly positioned while the object appears slightly off-center in the camera.

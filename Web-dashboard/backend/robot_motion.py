@@ -18,6 +18,9 @@ class MotionBackend(Protocol):
     def translate(self, velocity_x: float, velocity_y: float) -> None:
         ...
 
+    def rotate(self, yaw_rate: float) -> None:
+        ...
+
     def stop(self) -> None:
         ...
 
@@ -31,6 +34,9 @@ class DryRunMotion:
 
     def translate(self, velocity_x: float, velocity_y: float) -> None:
         print(f"[motion] dry-run translate x={velocity_x:.1f} y={velocity_y:.1f}")
+
+    def rotate(self, yaw_rate: float) -> None:
+        print(f"[motion] dry-run rotate yaw_rate={yaw_rate:.2f}")
 
     def stop(self) -> None:
         print("[motion] dry-run stop")
@@ -52,6 +58,12 @@ class ShellMotion:
         raise RuntimeError(
             "Shell motion only supports forward/stop. Use --motion auto or "
             "--motion hiwonder for visual servoing."
+        )
+
+    def rotate(self, yaw_rate: float) -> None:
+        raise RuntimeError(
+            "Shell motion only supports forward/stop. Use --motion auto or "
+            "--motion hiwonder for heading correction."
         )
 
     def stop(self) -> None:
@@ -89,6 +101,15 @@ class HiwonderMecanumMotion:
             f"y={velocity_y:.1f} speed={speed:.1f} direction={direction:.1f}"
         )
         self.chassis.set_velocity(float(speed), float(direction), 0)
+
+    def rotate(self, yaw_rate: float) -> None:
+        yaw_rate = max(-2.0, min(2.0, float(yaw_rate)))
+        if abs(yaw_rate) < 1e-3:
+            self.stop()
+            return
+
+        print(f"[motion] hiwonder rotate yaw_rate={yaw_rate:.2f}")
+        self.chassis.set_velocity(0, self.direction, yaw_rate)
 
     def stop(self) -> None:
         print("[motion] hiwonder stop")

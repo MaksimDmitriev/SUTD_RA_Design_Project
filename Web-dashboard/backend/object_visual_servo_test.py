@@ -1,4 +1,5 @@
 import argparse
+import math
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -469,6 +470,66 @@ def parse_args():
             "uses move_cm / this value to choose drive time."
         ),
     )
+    parser.set_defaults(distance_heading_correction=True)
+    parser.add_argument(
+        "--no-distance-heading-correction",
+        dest="distance_heading_correction",
+        action="store_false",
+        help=(
+            "Disable floor_x_cm heading correction for --approach-mode "
+            "floor-distance."
+        ),
+    )
+    parser.add_argument(
+        "--distance-heading-deadband-cm",
+        type=float,
+        default=4.0,
+        help=(
+            "Ignore floor_x_cm while its absolute value is at or below this "
+            "distance."
+        ),
+    )
+    parser.add_argument(
+        "--distance-heading-min-y-cm",
+        type=float,
+        default=8.0,
+        help="Do not rotate from floor_x_cm when the object is closer than this.",
+    )
+    parser.add_argument(
+        "--distance-heading-max-y-cm",
+        type=float,
+        default=50.0,
+        help="Only use floor_x_cm heading correction inside this floor_y_cm range.",
+    )
+    parser.add_argument(
+        "--distance-heading-max-deg",
+        type=float,
+        default=12.0,
+        help="Maximum single heading correction angle in degrees.",
+    )
+    parser.add_argument(
+        "--distance-heading-yaw-rate",
+        type=float,
+        default=0.4,
+        help=(
+            "Hiwonder yaw angular speed for heading correction. The SDK range is "
+            "roughly -2..2."
+        ),
+    )
+    parser.add_argument(
+        "--distance-heading-deg-per-second",
+        type=float,
+        default=45.0,
+        help=(
+            "Measured robot turn rate for --distance-heading-yaw-rate. The script "
+            "uses angle_deg / this value to choose turn time."
+        ),
+    )
+    parser.add_argument(
+        "--invert-distance-heading",
+        action="store_true",
+        help="Reverse heading correction if the robot turns away from the object.",
+    )
     parser.add_argument(
         "--camera-height-cm",
         type=float,
@@ -637,6 +698,49 @@ def drive_forward_for_distance(motion, move_cm: float, speed: float, cm_per_seco
         raise ValueError("--distance-drive-cm-per-second must be greater than 0")
     duration_seconds = move_cm / cm_per_second
     motion.translate(0.0, speed)
+    time.sleep(duration_seconds)
+    motion.stop()
+    return duration_seconds
+
+
+def heading_correction_from_projection(projection: dict, args) -> tuple[float, str]:
+    if not args.distance_heading_correction:
+        return 0.0, "disabled"
+
+    floor_x = projection["floor_x_cm"]
+    floor_y = projection["floor_y_cm"]
+    if floor_y < args.distance_heading_min_y_cm:
+        return 0.0, "object too close for heading correction"
+    if floor_y > args.distance_heading_max_y_cm:
+        return 0.0, "object too far for heading correction"
+    if abs(floor_x) <= args.distance_heading_deadband_cm:
+        return 0.0, "floor_x inside heading deadband"
+
+    raw_angle_deg = math.degrees(math.atan2(floor_x, max(floor_y, 1e-6)))
+    angle_deg = clamp(
+        raw_angle_deg,
+        -abs(args.distance_heading_max_deg),
+        abs(args.distance_heading_max_deg),
+    )
+    if args.invert_distance_heading:
+        angle_deg = -angle_deg
+
+    return angle_deg, f"alpha={raw_angle_deg:.1f}deg"
+
+
+def rotate_for_heading_correction(
+    motion,
+    angle_deg: float,
+    yaw_rate: float,
+    deg_per_second: float,
+) -> float:
+    if abs(angle_deg) <= 1e-3:
+        return 0.0
+    if deg_per_second <= 0:
+        raise ValueError("--distance-heading-deg-per-second must be greater than 0")
+    duration_seconds = abs(angle_deg) / deg_per_second
+    signed_yaw_rate = math.copysign(abs(yaw_rate), angle_deg)
+    motion.rotate(signed_yaw_rate)
     time.sleep(duration_seconds)
     motion.stop()
     return duration_seconds
@@ -1328,6 +1432,39 @@ def main() -> int:
                     )
 
                 if move_cm > 0.0:
+                    heading_angle_deg, heading_reason = heading_correction_from_projection(
+                        projection,
+                        args,
+                    )
+                    if abs(heading_angle_deg) > 1e-3:
+                        save_debug_frame(
+                            args.debug_frame_dir,
+                            frame,
+                            detection,
+                            geometry,
+                            (
+                                "floor-heading "
+                                f"x={projection['floor_x_cm']:.1f}cm "
+                                f"y={projection['floor_y_cm']:.1f}cm "
+                                f"turn={heading_angle_deg:.1f}deg"
+                            ),
+                        )
+                        duration = rotate_for_heading_correction(
+                            motion,
+                            heading_angle_deg,
+                            args.distance_heading_yaw_rate,
+                            args.distance_heading_deg_per_second,
+                        )
+                        print(
+                            "[visual-servo] floor-distance heading correction "
+                            f"{heading_angle_deg:.2f}deg for {duration:.2f}s "
+                            f"at yaw_rate={args.distance_heading_yaw_rate:.2f}; "
+                            f"{heading_reason}; remeasuring"
+                        )
+                        stable_count = 0
+                        time.sleep(args.poll_seconds)
+                        continue
+
                     save_debug_frame(
                         args.debug_frame_dir,
                         frame,
