@@ -29,7 +29,7 @@ HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
     "my_home": [(3, 1336), (4, 2460), (5, 1529), (6, 1480)],
 }
 
-FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 3.5
+FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 2.5
 POST_GRAB_WRIST_POSE: list[tuple[int, int]] = [(5, 1500)]
 POST_GRAB_TRASH_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 2500)]
 POST_GRAB_USEFUL_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 500)]
@@ -483,7 +483,7 @@ def parse_args():
     parser.add_argument(
         "--distance-heading-deadband-cm",
         type=float,
-        default=4.0,
+        default=5.0,
         help=(
             "Ignore floor_x_cm while its absolute value is at or below this "
             "distance."
@@ -510,7 +510,7 @@ def parse_args():
     parser.add_argument(
         "--distance-heading-yaw-rate",
         type=float,
-        default=0.4,
+        default=0.2,
         help=(
             "Hiwonder yaw angular speed for heading correction. The SDK range is "
             "roughly -2..2."
