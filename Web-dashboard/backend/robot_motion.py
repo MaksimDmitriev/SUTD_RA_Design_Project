@@ -15,7 +15,12 @@ class MotionBackend(Protocol):
     def forward(self) -> None:
         ...
 
-    def translate(self, velocity_x: float, velocity_y: float) -> None:
+    def translate(
+        self,
+        velocity_x: float,
+        velocity_y: float,
+        yaw: float = 0.0,
+    ) -> None:
         ...
 
     def rotate(self, yaw_rate: float) -> None:
@@ -32,8 +37,16 @@ class DryRunMotion:
     def forward(self) -> None:
         print("[motion] dry-run forward")
 
-    def translate(self, velocity_x: float, velocity_y: float) -> None:
-        print(f"[motion] dry-run translate x={velocity_x:.1f} y={velocity_y:.1f}")
+    def translate(
+        self,
+        velocity_x: float,
+        velocity_y: float,
+        yaw: float = 0.0,
+    ) -> None:
+        print(
+            f"[motion] dry-run translate x={velocity_x:.1f} "
+            f"y={velocity_y:.1f} yaw={yaw:.2f}"
+        )
 
     def rotate(self, yaw_rate: float) -> None:
         print(f"[motion] dry-run rotate yaw_rate={yaw_rate:.2f}")
@@ -54,7 +67,12 @@ class ShellMotion:
         print(f"[motion] shell forward: {self.forward_cmd}")
         self._process = subprocess.Popen(shlex.split(self.forward_cmd))
 
-    def translate(self, velocity_x: float, velocity_y: float) -> None:
+    def translate(
+        self,
+        velocity_x: float,
+        velocity_y: float,
+        yaw: float = 0.0,
+    ) -> None:
         raise RuntimeError(
             "Shell motion only supports forward/stop. Use --motion auto or "
             "--motion hiwonder for visual servoing."
@@ -88,7 +106,12 @@ class HiwonderMecanumMotion:
         )
         self.chassis.set_velocity(self.speed, self.direction, 0)
 
-    def translate(self, velocity_x: float, velocity_y: float) -> None:
+    def translate(
+        self,
+        velocity_x: float,
+        velocity_y: float,
+        yaw: float = 0.017,
+    ) -> None:
         speed = math.hypot(velocity_x, velocity_y)
         if speed < 1e-3:
             self.stop()
@@ -98,9 +121,10 @@ class HiwonderMecanumMotion:
         speed = max(-100.0, min(100.0, speed))
         print(
             f"[motion] hiwonder translate x={velocity_x:.1f} "
-            f"y={velocity_y:.1f} speed={speed:.1f} direction={direction:.1f}"
+            f"y={velocity_y:.1f} speed={speed:.1f} direction={direction:.1f} "
+            f"yaw={yaw:.4f}"
         )
-        self.chassis.set_velocity(float(speed), float(direction), 0)
+        self.chassis.set_velocity(float(speed), float(direction), float(yaw))
 
     def rotate(self, yaw_rate: float) -> None:
         yaw_rate = max(-2.0, min(2.0, float(yaw_rate)))
