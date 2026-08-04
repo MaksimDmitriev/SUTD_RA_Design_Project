@@ -219,21 +219,6 @@ http://192.168.149.1:8000/#dashboard
 
 The dashboard is intentionally not linked from the front page because it is for local robot control only. If the website is deployed publicly, the dashboard API calls will not work unless the browser can still reach the robot backend.
 
-### Laptop: internal dashboard arm controls
-
-Open the internal dashboard from your laptop:
-
-```text
-http://192.168.149.1:8000/#dashboard
-```
-
-Use the **Arm control** panel to move the arm servos:
-
-- Servos `2`, `3`, `4`, `5`, and `6`: set an angle from `0` to `180` degrees, then press **Set**.
-- Gripper: press **Open gripper** or **Close gripper**. The gripper uses servo `1`.
-
-Start with small movements and keep one hand near the robot power switch. If the gripper direction or range is wrong, adjust the open/close angles in `backend/app.py`.
-
 ### Laptop: sync after changes
 
 After changing frontend or backend files, run this from your laptop. This command block syncs both parts:

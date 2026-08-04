@@ -4,14 +4,10 @@ import {
   Camera,
   CircleStop,
   Gauge,
-  Hand,
   LayoutDashboard,
-  Loader2,
   Recycle,
   Save,
   ShieldCheck,
-  SlidersHorizontal,
-  Sparkles,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import heroImage from "./assets/sortibot-hero.png";
@@ -131,7 +127,7 @@ function ProjectPage() {
             <h3>Use live visual feedback</h3>
             <p>
               Monitor the robot camera stream, collect training examples, and inspect
-              recent predictions from a local web interface.
+              collection status from a local web interface.
             </p>
           </article>
           <article className="info-card">
@@ -163,13 +159,6 @@ function Dashboard({ onOpenProject }) {
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(null);
   const [message, setMessage] = useState("");
-  const [jointAngles, setJointAngles] = useState({
-    2: 90,
-    3: 90,
-    4: 90,
-    5: 90,
-    6: 90,
-  });
 
   const streamUrl = useMemo(() => `${API_BASE}/api/stream.mjpg`, []);
 
@@ -199,55 +188,6 @@ function Dashboard({ onOpenProject }) {
       setBusy(null);
     }
   }
-
-  async function predict() {
-    setBusy("predict");
-    setMessage("");
-    try {
-      const result = await api("/api/predict", { method: "POST" });
-      setMessage(`Prediction: ${result.label} (${Math.round(result.confidence * 100)}%)`);
-      await refreshStatus();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function setServo(servoId) {
-    const angle = jointAngles[servoId];
-    setBusy(`servo-${servoId}`);
-    setMessage("");
-    try {
-      const result = await api("/api/arm/servo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ servo_id: servoId, angle }),
-      });
-      setMessage(`Servo ${result.servo_id}: ${result.angle} deg`);
-      await refreshStatus();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function setGripper(nextState) {
-    setBusy(`gripper-${nextState}`);
-    setMessage("");
-    try {
-      const result = await api(`/api/arm/gripper/${nextState}`, { method: "POST" });
-      setMessage(`Gripper ${result.state}: ${result.angle} deg`);
-      await refreshStatus();
-    } catch (error) {
-      setMessage(error.message);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  const prediction = status?.last_prediction;
 
   return (
     <>
@@ -288,73 +228,6 @@ function Dashboard({ onOpenProject }) {
               <button onClick={() => capture("ignore")} disabled={!!busy}>
                 <Save size={17} />
                 Ignore
-              </button>
-            </div>
-          </section>
-
-          <section className="card">
-            <h2>Inference</h2>
-            <button className="primary" onClick={predict} disabled={!!busy}>
-              {busy === "predict" ? <Loader2 className="spin" size={18} /> : <Sparkles size={18} />}
-              Predict current frame
-            </button>
-            {prediction && (
-              <div className="prediction">
-                <strong>{prediction.label}</strong>
-                <span>{Math.round(prediction.confidence * 100)}%</span>
-                <small>{prediction.prompt}</small>
-              </div>
-            )}
-          </section>
-
-          <section className="card control-card">
-            <h2>Arm control</h2>
-            <div className="joint-list">
-              {[2, 3, 4, 5, 6].map((servoId) => (
-                <div className="joint-control" key={servoId}>
-                  <label htmlFor={`servo-${servoId}`}>Servo {servoId}</label>
-                  <input
-                    id={`servo-${servoId}`}
-                    max="180"
-                    min="0"
-                    onChange={(event) =>
-                      setJointAngles((current) => ({
-                        ...current,
-                        [servoId]: Number(event.target.value),
-                      }))
-                    }
-                    type="range"
-                    value={jointAngles[servoId]}
-                  />
-                  <output>{jointAngles[servoId]} deg</output>
-                  <button
-                    onClick={() => setServo(servoId)}
-                    disabled={!!busy}
-                    type="button"
-                    title={`Set servo ${servoId} angle`}
-                  >
-                    <SlidersHorizontal size={16} />
-                    Set
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div className="gripper-controls">
-              <button
-                onClick={() => setGripper("open")}
-                disabled={!!busy}
-                type="button"
-              >
-                <Hand size={16} />
-                Open gripper
-              </button>
-              <button
-                onClick={() => setGripper("close")}
-                disabled={!!busy}
-                type="button"
-              >
-                <Hand size={16} />
-                Close gripper
               </button>
             </div>
           </section>

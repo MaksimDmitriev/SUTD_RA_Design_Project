@@ -170,10 +170,6 @@ h3 {
   margin-top: 4px;
 }
 
-.hero-actions .primary {
-  width: auto;
-}
-
 .text-link {
   align-items: center;
   color: #e7f0ea;
@@ -336,74 +332,8 @@ h3 {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.primary {
-  background: #2e77c7;
-  border-color: #3d86d7;
-  color: white;
-  width: 100%;
-}
-
-.prediction {
-  border-top: 1px solid #303a36;
-  display: grid;
-  gap: 4px;
-  margin-top: 14px;
-  padding-top: 14px;
-}
-
-.prediction strong {
-  font-size: 22px;
-  text-transform: capitalize;
-}
-
-.prediction span,
-.prediction small,
 dd {
   color: #a7b4ac;
-}
-
-.control-card {
-  display: grid;
-  gap: 14px;
-}
-
-.joint-list {
-  display: grid;
-  gap: 12px;
-}
-
-.joint-control {
-  align-items: center;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 64px minmax(110px, 1fr) 58px 72px;
-}
-
-.joint-control label,
-.joint-control output {
-  color: #bac7bf;
-  font-size: 13px;
-  font-weight: 750;
-}
-
-.joint-control output {
-  text-align: right;
-}
-
-.joint-control input[type="range"] {
-  accent-color: #74d9b3;
-  width: 100%;
-}
-
-.joint-control button {
-  min-height: 36px;
-  padding: 0 10px;
-}
-
-.gripper-controls {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: 1fr 1fr;
 }
 
 dl {
@@ -435,16 +365,6 @@ dd {
   gap: 8px;
   min-height: 44px;
   padding: 10px 12px;
-}
-
-.spin {
-  animation: spin 0.9s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @media (max-width: 880px) {
@@ -502,24 +422,11 @@ dd {
   }
 
   .hero-actions,
-  .hero-actions .primary,
   .text-link {
     width: 100%;
   }
 
   .button-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .joint-control {
-    grid-template-columns: 1fr;
-  }
-
-  .joint-control output {
-    text-align: left;
-  }
-
-  .gripper-controls {
     grid-template-columns: 1fr;
   }
 }
