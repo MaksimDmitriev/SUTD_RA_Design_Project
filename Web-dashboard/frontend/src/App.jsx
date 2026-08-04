@@ -4,6 +4,7 @@ import {
   Camera,
   CircleStop,
   Gauge,
+  Github,
   LayoutDashboard,
   Recycle,
   Save,
@@ -88,18 +89,28 @@ function ProjectPage() {
 
       <section className="hero">
         <div className="hero-copy">
-          <p className="section-kicker">Robot-assisted object sorting</p>
-          <h2>Teaching a small robot to see, decide, and sort everyday objects.</h2>
+          <p className="section-kicker">Vision-guided object sorting</p>
+          <h2>A mobile robot that sees, approaches, picks, and sorts.</h2>
           <p>
-            SortiBot is a MasterPi-based research prototype for camera-guided object
-            classification. The project combines a live robot dashboard, image capture
-            workflow, and CLIP-style inference to separate items into trash, keep, or
-            ignore categories.
+            SortiBot is a MasterPi-based research prototype that uses a custom YOLO11n
+            model to detect objects, estimate their position on the floor, approach them,
+            and route them to class-specific release positions. The current demonstration
+            uses two classes—red useful objects and purple trash—but the neural network
+            can be retrained with labelled images of additional objects.
           </p>
           <div className="hero-actions">
-            <a className="text-link" href="#overview">
-              View overview
+            <a className="text-link" href="#how-it-works">
+              See how it works
               <ArrowRight size={16} />
+            </a>
+            <a
+              className="text-link"
+              href="https://github.com/MaksimDmitriev/SUTD_RA_Design_Project"
+              rel="noreferrer"
+              target="_blank"
+            >
+              <Github size={16} />
+              View source on GitHub
             </a>
           </div>
         </div>
@@ -110,34 +121,118 @@ function ProjectPage() {
 
       <section className="overview" id="overview" aria-labelledby="overview-title">
         <div className="section-heading">
-          <p className="section-kicker">Project goal</p>
-          <h2 id="overview-title">A small end-to-end system for practical robot perception.</h2>
+          <p className="section-kicker">System overview</p>
+          <h2 id="overview-title">An end-to-end pipeline from camera frame to sorting action.</h2>
         </div>
         <div className="info-grid">
           <article className="info-card">
-            <Recycle size={22} />
-            <h3>Sort useful categories</h3>
-            <p>
-              Capture object images and classify them into operational labels that the
-              robot can use for sorting decisions.
-            </p>
-          </article>
-          <article className="info-card">
             <Camera size={22} />
-            <h3>Use live visual feedback</h3>
+            <h3>Custom on-robot perception</h3>
             <p>
-              Monitor the robot camera stream, collect training examples, and inspect
-              collection status from a local web interface.
+              A two-class YOLO11n detector recognizes the red useful and purple trash
+              demonstration objects. Its NCNN export runs locally on the Raspberry Pi.
             </p>
           </article>
           <article className="info-card">
             <Gauge size={22} />
-            <h3>Keep deployment lightweight</h3>
+            <h3>Geometry-guided approach</h3>
             <p>
-              Run the dashboard and API on the robot network with a small React frontend
-              and FastAPI backend.
+              Floor projection estimates forward and lateral position. The chassis moves
+              conservatively, stops, corrects its heading, and measures again.
             </p>
           </article>
+          <article className="info-card">
+            <Recycle size={22} />
+            <h3>Class-directed sorting</h3>
+            <p>
+              The arm visually refines the grab position, attempts the pickup, and uses
+              the detector label to choose the useful or trash release pose.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section className="project-section" id="how-it-works" aria-labelledby="workflow-title">
+        <div className="section-heading">
+          <p className="section-kicker">How SortiBot works</p>
+          <h2 id="workflow-title">A measured, repeatable sequence rather than one long move.</h2>
+          <p>
+            Each stage can be tested independently, which helped separate perception,
+            chassis, camera, and arm problems during development.
+          </p>
+        </div>
+        <ol className="workflow-grid">
+          <li className="workflow-step">
+            <span>01</span>
+            <h3>Observe</h3>
+            <p>The robot camera captures the latest view of the floor.</p>
+          </li>
+          <li className="workflow-step">
+            <span>02</span>
+            <h3>Detect</h3>
+            <p>YOLO identifies a red useful or purple trash demonstration object.</p>
+          </li>
+          <li className="workflow-step">
+            <span>03</span>
+            <h3>Locate</h3>
+            <p>The box bottom-centre is projected onto the floor to estimate position.</p>
+          </li>
+          <li className="workflow-step">
+            <span>04</span>
+            <h3>Approach</h3>
+            <p>The chassis moves partway, corrects its heading, stops, and remeasures.</p>
+          </li>
+          <li className="workflow-step">
+            <span>05</span>
+            <h3>Pick</h3>
+            <p>The arm aligns above the target, descends, closes the gripper, and lifts.</p>
+          </li>
+          <li className="workflow-step">
+            <span>06</span>
+            <h3>Sort</h3>
+            <p>The detected class selects a release pose before the arm returns home.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section className="project-section" aria-labelledby="results-title">
+        <div className="section-heading">
+          <p className="section-kicker">Verified results</p>
+          <h2 id="results-title">Evidence from the implemented and tested system.</h2>
+        </div>
+        <div className="results-grid">
+          <article className="result-card">
+            <strong>276</strong>
+            <h3>Robot-camera images</h3>
+            <p>84 red useful, 102 purple trash, and 90 ignore or hard-negative scenes.</p>
+          </article>
+          <article className="result-card">
+            <strong>NCNN</strong>
+            <h3>Embedded deployment</h3>
+            <p>The custom YOLO11n model was visually validated, exported, and loaded on the robot.</p>
+          </article>
+          <article className="result-card">
+            <strong>≈11×</strong>
+            <h3>Faster model training</h3>
+            <p>Apple Silicon MPS took about 0.080 hours versus 0.90 hours on CPU.</p>
+          </article>
+          <article className="result-card">
+            <strong>19 cm/s</strong>
+            <h3>Measured forward speed</h3>
+            <p>Speed 24 moved the physical robot approximately 38 cm in two seconds.</p>
+          </article>
+        </div>
+        <div className="training-note">
+          <ShieldCheck size={22} />
+          <div>
+            <h3>Designed for retraining</h3>
+            <p>
+              Preparing the two-class demonstration took a few hours across robot-camera
+              image capture, data labelling, and neural-network training. Training on the
+              Mac made iteration practical, and the same workflow can add more labelled
+              object classes later.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -146,8 +241,9 @@ function ProjectPage() {
         <div>
           <h2>Architecture</h2>
           <p>
-            The landing page lives inside the existing dashboard frontend, so the project
-            website and robot controls share one build, one deployment path, and one URL.
+            The public project page and robot-local capture dashboard share one React/Vite
+            frontend and deployment path. FastAPI serves the built site, camera stream,
+            capture endpoints, and robot status on the local network.
           </p>
         </div>
       </section>
@@ -236,16 +332,12 @@ function Dashboard({ onOpenProject }) {
             <h2>System</h2>
             <dl>
               <div>
-                <dt>Classifier</dt>
-                <dd>{status?.classifier_available ? "Loaded" : "Not loaded"}</dd>
-              </div>
-              <div>
                 <dt>Last capture</dt>
                 <dd>{status?.last_capture || "None"}</dd>
               </div>
               <div>
                 <dt>Error</dt>
-                <dd>{status?.last_error || status?.classifier_error || "None"}</dd>
+                <dd>{status?.last_error || "None"}</dd>
               </div>
             </dl>
           </section>
