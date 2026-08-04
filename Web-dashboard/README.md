@@ -16,14 +16,6 @@ robot moves forward slowly
   -> robot grabs only after the stop position is repeatable
 ```
 
-In this design:
-
-- LAB/color contrast detection answers: **where is the non-floor object?**
-- OpenCLIP answers: **what kind of object is it semantically?**
-- The policy layer answers: **what should the robot do?**
-
-YOLO is still documented below as an optional detector/training path, but it is not the current default approach.
-
 ## Why FastAPI for the server
 
 FastAPI is a good fit for this project because it keeps the server small while still supporting:
