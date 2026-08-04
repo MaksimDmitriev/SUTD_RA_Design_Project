@@ -746,6 +746,8 @@ The fixed home pose is `ID1=2500, ID3=1336, ID4=2460, ID5=1529, ID6=1480`, repla
 
 For calibration history, the recorded intermediate pose was `ID1=500, ID3=600, ID4=600, ID5=2300, ID6=600`, and the recorded wall-facing pose was `ID3=1500, ID4=2500, ID5=1500, ID6=1500`. These alternate pulse sets are documentation only; `object_visual_servo_test.py` intentionally no longer accepts arbitrary home pulses.
 
+The temporary notes also recorded another test pose (`ID3=600, ID4=2000, ID5=1300, ID6=1600`) and a floor-looking pose (`ID3=800, ID4=2460, ID5=1529, ID6=1405`).
+
 The intermediate pose was used because small requested changes—such as moving a PWM value from 500 to 520 or 530—sometimes produced no visible movement. The exact cause was not confirmed and could involve an internal control threshold, servo resolution, backlash, or static friction. Starting from a clearly different pose improved the repeatability of the final camera position.
 
 How one pulse value maps to the same joint angle:
@@ -768,6 +770,28 @@ you send pulse 1336
 servo ID3 treats 1336 as its target
 servo ID3 rotates until its internal feedback says it reached that target
 ```
+
+To check the floor projection independently, run the dedicated measurement script on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python measure_bottom_y_ratio.py \
+  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
+  --conf 0.35 \
+  --labels red_useful,purple_trash \
+  --frames 5 \
+  --home-servo-pulses "1:2500,3:1336,4:2460,5:1529,6:1480" \
+  --home-servo-duration 1.5 \
+  --project-floor \
+  --camera-height-cm 19.6 \
+  --camera-pitch-down-deg 17.2 \
+  --camera-hfov-deg 79.1 \
+  --debug-frame ~/Web-dashboard/data/debug_detections/floor_projection.jpg
+```
+
+Two recorded five-frame checks gave `bottom_y_ratio=0.4850` at 74 cm and `bottom_y_ratio=0.5246` at 64 cm from the front edge of the chassis. The closer object appearing lower in the frame is consistent with the floor-projection geometry.
 
 The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values are the starting arm capture point used after the robot stops near the object.
 
@@ -794,6 +818,38 @@ The remaining command arguments are:
 - `--distance-reliable-cm 30.0`: at or below this projected forward distance, trust the measurement for the final approach move. Farther away, the robot moves only partway and measures again.
 - `--distance-far-step-fraction 0.5`: when the object is outside the reliable range, drive half of the projected forward distance before stopping and remeasuring.
 - `--distance-max-step-cm 25.0`: cap any single forward movement at 25 cm so a bad projection cannot command one long drive.
+
+#### Robot: left drift and the “move a bit” check
+
+The initial straight-drive checks measured left drift of 3, 6, 11, 14, and 26 cm after 1, 2, 3, 4, and 5 seconds respectively.
+
+The following five-second check helped because it uses `motion.translate(0, 24)`. On the MasterPi backend, `translate` applies the small default yaw correction `+0.017`; the simpler `forward()` path uses yaw `0`. The move therefore tested the compensated drive path—it did not mechanically fix the wheels. No post-change drift distances were recorded, so the improvement is qualitative.
+
+Run this only with clear space in front of the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+import time
+from robot_motion import create_motion_backend
+
+speed = 24
+seconds = 5.0
+motion = create_motion_backend(mode="auto", speed=speed, direction=90)
+
+print(f"Driving forward at speed={speed} for {seconds}s")
+try:
+    motion.translate(0, speed)
+    time.sleep(seconds)
+finally:
+    motion.stop()
+print("Stopped")
+PY
+```
+
+The floor-distance approach also uses `translate`, so its timed forward moves receive the same yaw correction.
 
 ### Refresh the YOLO v2 model after adding images
 
