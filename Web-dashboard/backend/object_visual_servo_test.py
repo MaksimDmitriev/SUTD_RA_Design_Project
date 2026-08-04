@@ -40,6 +40,10 @@ DEFAULT_APPROACH_LABELS = frozenset({"red_useful", "purple_trash"})
 DEFAULT_APPROACH_MODE = "floor-distance"
 DEFAULT_HOME_SERVO_DURATION_SECONDS = 1.5
 DEFAULT_DISTANCE_DRIVE_SPEED = 24.0
+# Fixed camera geometry measured in the repeatable my_home arm pose.
+DEFAULT_CAMERA_HEIGHT_CM = 19.6
+DEFAULT_CAMERA_PITCH_DOWN_DEG = 17.2
+DEFAULT_CAMERA_HORIZONTAL_FOV_DEG = 79.1
 # Maximum time allowed for the camera search and chassis approach loop.
 DEFAULT_MAX_RUN_SECONDS = 25.0
 # Minimum YOLO confidence accepted as a detection.
@@ -232,14 +236,6 @@ def parse_args():
         help="Convert detected pixel position to arm coordinates using MasterPi calibration.",
     )
     parser.add_argument(
-        "--home-arm-before-approach",
-        action="store_true",
-        help=(
-            "Move the arm to the configured home coordinate before visual servoing. "
-            "Use this when arm/camera pose changes the stop position."
-        ),
-    )
-    parser.add_argument(
         "--home-arm-only",
         action="store_true",
         help="Move the arm to the configured home coordinate and exit without driving.",
@@ -249,7 +245,7 @@ def parse_args():
         choices=["ik", *HOME_SERVO_POSES.keys()],
         default="my_home",
         help=(
-            "Startup arm pose for --home-arm-before-approach/--home-arm-only. "
+            "Startup arm pose used before every run and by --home-arm-only. "
             "ik uses --grab-home-x/y/z; my_home replays measured servo pulses."
         ),
     )
@@ -438,21 +434,6 @@ def parse_args():
         help="Reverse heading correction if the robot turns away from the object.",
     )
     parser.add_argument(
-        "--camera-height-cm",
-        type=float,
-        default=None,
-        help="Camera optical-center height above the floor in cm.",
-    )
-    parser.add_argument(
-        "--camera-pitch-down-deg",
-        type=float,
-        default=None,
-        help=(
-            "Camera optical-axis downward tilt from horizontal in degrees. "
-            "0 means looking straight forward, 90 means looking straight down."
-        ),
-    )
-    parser.add_argument(
         "--camera-forward-offset-cm",
         type=float,
         default=0.0,
@@ -471,18 +452,12 @@ def parse_args():
         help="Optional camera yaw correction in degrees. Positive rotates right.",
     )
     parser.add_argument(
-        "--camera-hfov-deg",
-        type=float,
-        default=62.0,
-        help="Horizontal camera field of view used for floor projection.",
-    )
-    parser.add_argument(
         "--camera-vfov-deg",
         type=float,
         default=None,
         help=(
             "Vertical field of view. If omitted, it is derived from "
-            "--camera-hfov-deg and frame aspect ratio."
+            "the fixed horizontal field of view and frame aspect ratio."
         ),
     )
     parser.add_argument("--camera-fx-px", type=float, default=None)
@@ -495,6 +470,9 @@ def parse_args():
         approach_mode=DEFAULT_APPROACH_MODE,
         home_servo_duration=DEFAULT_HOME_SERVO_DURATION_SECONDS,
         distance_drive_speed=DEFAULT_DISTANCE_DRIVE_SPEED,
+        camera_height_cm=DEFAULT_CAMERA_HEIGHT_CM,
+        camera_pitch_down_deg=DEFAULT_CAMERA_PITCH_DOWN_DEG,
+        camera_hfov_deg=DEFAULT_CAMERA_HORIZONTAL_FOV_DEG,
         max_seconds=DEFAULT_MAX_RUN_SECONDS,
         conf=DEFAULT_YOLO_CONFIDENCE,
         distance_drive_cm_per_second=CALIBRATED_DISTANCE_DRIVE_CM_PER_SECOND,
@@ -1055,56 +1033,48 @@ def main() -> int:
     args = parse_args()
     classification_mode = DEFAULT_CLASSIFICATION_MODE
     approach_labels = set(DEFAULT_APPROACH_LABELS)
-    if args.approach_mode == "floor-distance" and (
-        args.camera_height_cm is None or args.camera_pitch_down_deg is None
-    ):
-        raise SystemExit(
-            "floor-distance approach requires --camera-height-cm and "
-            "--camera-pitch-down-deg"
-        )
 
-    if args.home_arm_before_approach or args.home_arm_only:
-        arm = create_arm(args)
-        if args.home_pose != "ik":
-            positions = HOME_SERVO_POSES[args.home_pose]
-            print(
-                f"[visual-servo] homing arm to {args.home_pose} servo pose "
-                f"{positions}"
-            )
-            arm.set_servo_pulses(
-                positions,
-                duration_seconds=args.home_servo_duration,
-            )
-        else:
-            print(
-                "[visual-servo] homing arm to "
-                f"({args.grab_home_x_cm:.1f}, {args.grab_home_y_cm:.1f}, "
-                f"{args.grab_home_z_cm:.1f}) before approach"
-            )
-            arm.move_home()
-        if args.home_servo4_pulse is not None:
-            print(
-                "[visual-servo] setting startup servo 4 pulse "
-                f"{args.home_servo4_pulse}"
-            )
-            arm.set_servo_pulse(
-                4,
-                args.home_servo4_pulse,
-                duration_seconds=args.home_servo4_duration,
-            )
-        elif args.home_servo4_angle is not None:
-            print(
-                "[visual-servo] setting startup servo 4 angle "
-                f"{args.home_servo4_angle}"
-            )
-            arm.set_servo_angle(
-                4,
-                args.home_servo4_angle,
-                duration_seconds=args.home_servo4_duration,
-            )
-        if args.home_arm_only:
-            print("[visual-servo] arm homed; exiting")
-            return 0
+    arm = create_arm(args)
+    if args.home_pose != "ik":
+        positions = HOME_SERVO_POSES[args.home_pose]
+        print(
+            f"[visual-servo] homing arm to {args.home_pose} servo pose "
+            f"{positions}"
+        )
+        arm.set_servo_pulses(
+            positions,
+            duration_seconds=args.home_servo_duration,
+        )
+    else:
+        print(
+            "[visual-servo] homing arm to "
+            f"({args.grab_home_x_cm:.1f}, {args.grab_home_y_cm:.1f}, "
+            f"{args.grab_home_z_cm:.1f}) before approach"
+        )
+        arm.move_home()
+    if args.home_servo4_pulse is not None:
+        print(
+            "[visual-servo] setting startup servo 4 pulse "
+            f"{args.home_servo4_pulse}"
+        )
+        arm.set_servo_pulse(
+            4,
+            args.home_servo4_pulse,
+            duration_seconds=args.home_servo4_duration,
+        )
+    elif args.home_servo4_angle is not None:
+        print(
+            "[visual-servo] setting startup servo 4 angle "
+            f"{args.home_servo4_angle}"
+        )
+        arm.set_servo_angle(
+            4,
+            args.home_servo4_angle,
+            duration_seconds=args.home_servo4_duration,
+        )
+    if args.home_arm_only:
+        print("[visual-servo] arm homed; exiting")
+        return 0
 
     print("[visual-servo] loading camera")
     camera = Camera()

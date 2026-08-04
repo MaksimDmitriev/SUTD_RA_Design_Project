@@ -722,10 +722,6 @@ cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 python object_visual_servo_test.py \
-  --home-arm-before-approach \
-  --camera-height-cm 19.6 \
-  --camera-pitch-down-deg 17.2 \
-  --camera-hfov-deg 79.1 \
   --distance-reliable-cm 30.0 \
   --distance-far-step-fraction 0.5 \
   --distance-max-step-cm 25.0
@@ -786,21 +782,15 @@ cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 python object_visual_servo_test.py \
-  --home-arm-before-approach \
-  --camera-height-cm 19.6 \
-  --camera-pitch-down-deg 17.2 \
-  --camera-hfov-deg 79.1 \
   --distance-reliable-cm 30.0 \
   --distance-far-step-fraction 0.5 \
   --distance-max-step-cm 25.0
 ```
 
-Tune these values one at a time:
+Before every run, the script moves the arm to the fixed `my_home` pose and keeps the gripper open at pulse 2500. The floor projection then uses that pose's calibrated camera geometry: optical-center height `19.6 cm`, downward pitch `17.2°`, and horizontal field of view `79.1°`.
 
-- `--home-arm-before-approach`: move the arm to the fixed `my_home` servo pose before starting detection. This gives the camera a repeatable position and keeps the gripper open at pulse 2500.
-- `--camera-height-cm 19.6`: height of the camera's optical center above the floor. Floor projection uses it to estimate the object's forward distance.
-- `--camera-pitch-down-deg 17.2`: downward angle of the camera's optical axis from horizontal. An incorrect pitch causes the projected distance to be consistently too long or too short.
-- `--camera-hfov-deg 79.1`: camera horizontal field of view. It determines how image pixels map to horizontal and forward floor coordinates.
+The remaining command arguments are:
+
 - `--distance-reliable-cm 30.0`: at or below this projected forward distance, trust the measurement for the final approach move. Farther away, the robot moves only partway and measures again.
 - `--distance-far-step-fraction 0.5`: when the object is outside the reliable range, drive half of the projected forward distance before stopping and remeasuring.
 - `--distance-max-step-cm 25.0`: cap any single forward movement at 25 cm so a bad projection cannot command one long drive.

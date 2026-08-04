@@ -22,7 +22,6 @@ python object_visual_servo_test.py \
   --uncentered-y-scale 0.3 \
   --speed 24 \
   --direction 90 \
-  --home-arm-before-approach \
   --grab-x-cm 0 \
   --grab-y-cm 12.0 \
   --grab-z-cm 0.1 \
