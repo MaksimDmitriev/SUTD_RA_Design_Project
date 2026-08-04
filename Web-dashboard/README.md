@@ -8,12 +8,12 @@ Target robot behavior:
 
 ```text
 robot moves forward slowly
-  -> camera sees possible object
-  -> LAB/color contrast detection finds a tight non-floor blob
-  -> crop that blob from the frame
-  -> OpenCLIP classifies crop as Trash / Keep / Ignore
-  -> robot centers and approaches if the object is Trash or Keep
-  -> robot grabs only after the stop position is repeatable
+  -> camera captures the floor scene
+  -> two-class YOLO detects red_useful or purple_trash
+  -> floor projection estimates the object's forward and lateral position
+  -> robot moves partway, stops, re-detects, and corrects its heading
+  -> arm aligns above the object and grabs it
+  -> detector label selects the useful or trash release pose
 ```
 
 ## Why FastAPI for the server
@@ -34,12 +34,8 @@ Web-dashboard/
   backend/
     app.py
     camera.py
-    clip_classifier.py
-    contrast_detector.py
     object_visual_servo_test.py
-    test_contrast_detector_image.py
     requirements.txt
-    requirements-openclip.txt
   frontend/
     package.json
     index.html
@@ -133,7 +129,6 @@ rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
   --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
@@ -162,11 +157,7 @@ python -m pip install --no-cache-dir \
   --trusted-host download.pytorch.org \
   torch torchvision
 
-python -m pip install --no-cache-dir \
-  --trusted-host pypi.org \
-  --trusted-host files.pythonhosted.org \
-  --trusted-host www.piwheels.org \
-  -r requirements-openclip.txt
+python -m pip install --no-cache-dir ultralytics
 ```
 
 The package installation order matters:
@@ -174,9 +165,9 @@ The package installation order matters:
 1. Update installer tools: `pip`, `setuptools`, `wheel`.
 2. Install dashboard packages from `requirements.txt`.
 3. Install CPU-only PyTorch from the PyTorch CPU wheel index.
-4. Install OpenCLIP support packages from `requirements-openclip.txt`.
+4. Install the Ultralytics YOLO runtime.
 
-Do not install `torch torchvision open_clip_torch` directly from the default PyPI index on the Raspberry Pi. That can pull large CUDA/NVIDIA packages and fill the SD card.
+Install CPU-only PyTorch before Ultralytics on the Raspberry Pi. This avoids downloading an unsuitable or unnecessarily large dependency set.
 
 Verify the imports before starting the backend or robot movement scripts:
 
@@ -184,7 +175,7 @@ Verify the imports before starting the backend or robot movement scripts:
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
-python -c "import cv2; import fastapi; import numpy; import PIL; import serial; import smbus2; import torch; import torchvision; import open_clip; print('robot Python deps OK')"
+python -c "import cv2; import fastapi; import numpy; import PIL; import serial; import smbus2; import torch; import torchvision; import ultralytics; print('robot Python deps OK')"
 ```
 
 If this command fails with `ModuleNotFoundError`, stay in this section and reinstall the missing requirement on the robot. Do not fix it by copying a laptop `.venv`.
@@ -339,517 +330,12 @@ Then open the Vite URL printed by `npm run dev`. API calls are proxied to `127.0
 
 Do not use the laptop dev server for normal robot testing. Use `http://192.168.149.1:8000/` and `http://192.168.149.1:8000/#dashboard`.
 
-## Optional YOLO detection and retraining workflow
-
-This section is optional/reference. The current default approach is the LAB/color contrast visual-servo test below. Use this YOLO workflow only if the light-floor/non-light-object assumption is not enough, or if you later need a trained detector that works across more floor colors and object appearances.
-
-### What YOLO should do in this project
-
-Use YOLO for object detection/localization, not as the only trash/keep/ignore decision maker.
-
-This is better than training YOLO directly on `trash`, `keep`, and `ignore` at the beginning, because `trash` vs `keep` is often semantic and context-dependent. For example, a toy car is an object YOLO can localize, but whether it should be kept or ignored is better handled by the classifier/policy layer.
-
-### Important: captured images do not automatically retrain the model
-
-When you press the dashboard capture buttons, images are saved under:
-
-```text
-~/Web-dashboard/data/trash/
-~/Web-dashboard/data/keep/
-~/Web-dashboard/data/ignore/
-```
-
-Those folders are useful for classification testing and OpenCLIP prompt evaluation. They are **not enough for YOLO training** because YOLO needs bounding-box labels.
-
-For YOLO, each training image needs a label file that says where the object is:
-
-```text
-class_id x_center y_center width height
-```
-
-The coordinates are normalized from `0` to `1`. Example:
-
-```text
-0 0.512 0.438 0.214 0.180
-```
-
-So the training loop is:
-
-```text
-capture images on robot
-  -> pull images to laptop
-  -> draw bounding boxes with a labeling tool
-  -> export dataset in YOLO format
-  -> train YOLO on laptop/cloud
-  -> export a small model for Raspberry Pi
-  -> copy model to robot
-  -> restart backend / robot logic
-```
-
-The model does not learn from new captures until you retrain or fine-tune it and copy the new model to the robot.
-
-### Laptop: pull new captures before labeling
-
-Run this on the laptop:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
-
-mkdir -p "$SUTD_RA_DESIGN_PROJECT_DATA"
-
-rsync -av \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  pi@192.168.149.1:~/Web-dashboard/data/ \
-  "$SUTD_RA_DESIGN_PROJECT_DATA"/
-```
-
-After pulling images, keep the original captured folders as your raw dataset archive. The YOLO training dataset is a separate labeled copy prepared in the next section.
-
-### Laptop: train YOLO
-
-Run these steps on the laptop.
-
-Create the YOLO dataset folders:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-mkdir -p yolo_dataset/sortibot_detector/images/train
-mkdir -p yolo_dataset/sortibot_detector/images/val
-mkdir -p yolo_dataset/sortibot_detector/labels/train
-mkdir -p yolo_dataset/sortibot_detector/labels/val
-```
-
-Save this file as:
-
-```text
-yolo_dataset/sortibot_detector/data.yaml
-```
-
-File content:
-
-```yaml
-path: yolo_dataset/sortibot_detector
-train: images/train
-val: images/val
-names:
-  0: floor_object
-```
-
-`floor_object` means: **any visible object on the floor that the robot should stop and inspect**. It is only a detector class. It does not mean trash, keep, or ignore. YOLO will find the object box, then OpenCLIP will classify the cropped object as Trash / Keep / Ignore.
-
-Copy selected images from the pulled capture folders into the YOLO dataset:
-
-```text
-Web-dashboard/data/trash/   -> yolo_dataset/sortibot_detector/images/train or images/val
-Web-dashboard/data/keep/    -> yolo_dataset/sortibot_detector/images/train or images/val
-Web-dashboard/data/ignore/  -> yolo_dataset/sortibot_detector/images/train or images/val
-```
-
-Use this split:
-
-- Put about 80% of useful images into `images/train`.
-- Put about 20% of useful images into `images/val`.
-- Include images from `trash`, `keep`, and `ignore` in both splits if possible.
-- Do not copy very blurry images unless you intentionally want the detector to learn that condition.
-- For the one-class detector, all labeled objects use class id `0` because all boxes are `floor_object`.
-
-Example:
-
-```text
-yolo_dataset/sortibot_detector/images/train/wrapper_001.jpg
-yolo_dataset/sortibot_detector/labels/train/wrapper_001.txt
-
-yolo_dataset/sortibot_detector/images/val/toy_car_001.jpg
-yolo_dataset/sortibot_detector/labels/val/toy_car_001.txt
-```
-
-Each image must have a matching label file with the same base name:
-
-```text
-images/train/wrapper_001.jpg
-labels/train/wrapper_001.txt
-```
-
-Initially, the label files are empty. Then they will contain bounding boxes:
-
-```text
-0 x_center y_center width height
-```
-
-Use a labeling tool to draw one box around each object and export YOLO-format labels. Recommended for this project: **CVAT**. It supports bounding-box annotation and YOLO export, works well for small object-detection datasets, and avoids depending on a paid dataset-hosting workflow.
-
-Clone CVAT by using
-```
-git clone https://github.com/cvat-ai/cvat.git
-```
-
-Other options:
-
-- Roboflow: convenient hosted workflow, but more platform-dependent.
-- Label Studio: flexible, but more general-purpose than needed for simple YOLO boxes.
-- labelImg: simple, but no longer actively developed; use it only if you want a very lightweight local tool.
-
-### Laptop: label YOLO images with CVAT
-
-Run this on the laptop to start CVAT from the clone inside this project:
-
-```bash
-open -a Docker
-```
-
-Wait until Docker Desktop fully starts. It can take 30-90 seconds.
-
-Check that Docker is running:
-
-```bash
-docker info
-```
-
-If it prints system info, Docker is running. Then start CVAT:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
-
-docker-compose up -d
-docker exec -it cvat_server bash -ic 'python3 ~/manage.py createsuperuser'
-```
-
-Open CVAT:
-
-```text
-http://localhost:8080
-```
-
-Create upload ZIP files for the train and validation images:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-mkdir -p /tmp/sortibot_cvat_uploads
-
-(cd yolo_dataset/sortibot_detector/images/train && zip -r /tmp/sortibot_cvat_uploads/sortibot_train_images.zip .)
-(cd yolo_dataset/sortibot_detector/images/val && zip -r /tmp/sortibot_cvat_uploads/sortibot_val_images.zip .)
-```
-
-In CVAT:
-
-```text
-1. Create a project or task.
-2. Add one label: floor_object.
-3. Create one task for train images and upload /tmp/sortibot_cvat_uploads/sortibot_train_images.zip.
-4. Create one task for val images and upload /tmp/sortibot_cvat_uploads/sortibot_val_images.zip.
-5. Draw one bounding box around each object.
-6. Export annotations in YOLO format.
-```
-
-After exporting from CVAT, copy the exported `.txt` label files into the matching folder:
-
-```text
-train export .txt files -> yolo_dataset/sortibot_detector/labels/train/
-val export .txt files   -> yolo_dataset/sortibot_detector/labels/val/
-```
-
-The label filenames must match the image filenames:
-
-```text
-yolo_dataset/sortibot_detector/images/train/20260619_155110_064113.jpg
-yolo_dataset/sortibot_detector/labels/train/20260619_155110_064113.txt
-```
-
-Stop CVAT when you are done:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
-
-docker-compose down
-```
-
-Later, if you decide to train YOLO to detect semantic categories directly, replace the `names` block in the same file, `yolo_dataset/sortibot_detector/data.yaml`, with:
-
-```yaml
-names:
-  0: trash_like_object
-  1: useful_object
-  2: unknown_object
-```
-
-For the current stage, keep one class named `floor_object` because OpenCLIP will classify the crop.
-
-### Laptop: back up YOLO dataset
-
-Run this on the laptop after creating or updating the YOLO dataset. It mirrors `yolo_dataset/sortibot_detector/` into `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET` and removes files from the destination that no longer exist in the local dataset.
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-mkdir -p "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"
-
-rsync -av --delete \
-  yolo_dataset/sortibot_detector/ \
-  "$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET"/
-```
-
-After the dataset is prepared, install Ultralytics and train:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-python3 -m venv .yolo-train-venv
-source .yolo-train-venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install ultralytics
-
-yolo detect train \
-  model=$PWD/yolo26n.pt \
-  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
-  imgsz=640 \
-  epochs=80 \
-  batch=8 \
-  project=$PWD/runs/sortibot \
-  name=floor_object_detector
-```
-
-If your Ultralytics version does not have `yolo26n.pt`, use the nano model available in that version, for example `yolo11n.pt`.
-
-On an Apple Silicon laptop, you can try:
-
-```bash
-yolo detect train \
-  model=$PWD/yolo26n.pt \
-  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
-  imgsz=640 \
-  epochs=80 \
-  batch=8 \
-  device=mps \
-  project=$PWD/runs/sortibot \
-  name=floor_object_detector
-```
-
-Observed training time on this dataset:
-
-```text
-80 epochs completed in 0.080 hours with MPS.
-80 epochs completed in 0.90 hours with CPU.
-```
-
-Training on the Raspberry Pi itself is not recommended. It is much slower and can fill the SD card. Train on the laptop or a cloud GPU, then copy only the exported model to the robot.
-
-### Laptop: back up YOLO training runs
-
-Do not save `runs/` inside `$SUTD_RA_DESIGN_PROJECT_YOLO_DATASET`. The dataset backup command uses `--delete`, so it should mirror only the dataset. Keep training outputs in a separate backup location.
-
-Run this on the laptop after training:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-: "${SUTD_RA_DESIGN_PROJECT_YOLO_RUNS:?Set SUTD_RA_DESIGN_PROJECT_YOLO_RUNS first}"
-
-mkdir -p "$SUTD_RA_DESIGN_PROJECT_YOLO_RUNS"
-
-rsync -av --delete \
-  runs/sortibot/ \
-  "$SUTD_RA_DESIGN_PROJECT_YOLO_RUNS"/
-```
-
-### Laptop: validate and export for Raspberry Pi
-
-Run this on the laptop:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-source .yolo-train-venv/bin/activate
-
-yolo detect val \
-  model=$PWD/runs/sortibot/floor_object_detector/weights/best.pt \
-  data=$PWD/yolo_dataset/sortibot_detector/data.yaml \
-  imgsz=640 \
-  project=$PWD/runs/sortibot \
-  name=floor_object_detector_val
-
-yolo export \
-  model=$PWD/runs/sortibot/floor_object_detector/weights/best.pt \
-  format=ncnn \
-  imgsz=640
-```
-
-The export should create a folder similar to:
-
-```text
-runs/sortibot/floor_object_detector/weights/best_ncnn_model/
-```
-
-NCNN is preferred for Raspberry Pi because it is optimized for ARM/mobile inference.
-
-### Laptop: copy YOLO model to robot
-
-Run this on the laptop:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 \
-  "mkdir -p ~/Web-dashboard/models/detector"
-
-rsync -av --delete \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  $PWD/runs/sortibot/floor_object_detector/weights/best_ncnn_model/ \
-  pi@192.168.149.1:~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
-```
-
-Model files should stay out of git. Store the active robot model here:
-
-```text
-~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
-```
-
-The matching local laptop path can be:
-
-```text
-Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
-```
-
-but it is ignored by git.
-
-### Robot: install YOLO runtime package
-
-Run this on the robot after CPU-only PyTorch is already installed:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -m pip install --no-cache-dir ultralytics
-```
-
-Do not install YOLO/Ultralytics before the CPU-only PyTorch step. Otherwise pip may try to pull a large or wrong PyTorch dependency set.
-
-### Robot: quick YOLO model test
-
-Run this on the laptop first to copy the latest backend code to the robot:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-rsync -av --delete \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  --exclude "__pycache__" \
-  --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
-  --exclude ".yolo-train-venv" \
-  Web-dashboard/backend/ \
-  pi@192.168.149.1:~/Web-dashboard/backend/
-```
-
-Run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python - <<'PY'
-from ultralytics import YOLO
-
-model = YOLO("/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model")
-results = model("/home/pi/Web-dashboard/data/trash/20260619_155044_618393.jpg", imgsz=640, conf=0.25)
-print(results[0].boxes)
-PY
-```
-
-Use any existing image path on the robot if that sample image is not present.
-
-Expected output is either a `Boxes(...)` object with detections or an empty boxes object if the model runs but does not detect anything in that image.
-
-Example successful output with a detection:
-
-```text
-ultralytics.engine.results.Boxes object with attributes:
-...
-cls: tensor([0.])
-conf: tensor([0.82])
-xyxy: tensor([[123.4, 210.5, 356.7, 420.1]])
-```
-
-Example successful output with no detections:
-
-```text
-ultralytics.engine.results.Boxes object with attributes:
-...
-cls: tensor([])
-conf: tensor([])
-xyxy: tensor([], size=(0, 4))
-```
-
-If you see an import error, model path error, or NCNN loading error, the runtime package or copied model folder is not set up correctly.
-
-### Robot: legacy YOLO + ultrasonic one-meter object search test
-
-This is a legacy/reference test from the earlier implementation. It uses the custom YOLO model plus ultrasonic distance. The current recommended approach is the LAB/color contrast visual-servo test in the next section.
-
-This test drives forward, checks camera frames with YOLO, stops when a `floor_object` is detected, crops the detected box, then classifies the crop with OpenCLIP as `Trash`, `Keep`, or `Ignore`.
-
-Run this on the robot first without moving the motors:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python object_search_test.py --motion dry-run --max-seconds 5
-```
-
-Expected log with an object:
-
-```text
-[test] motion backend: dry-run
-[motion] dry-run forward
-[2026-07-01T15:10:30] detected floor_object confidence=0.856 box=(260, 178, 345, 265)
-[2026-07-01T15:10:30] detected Trash confidence=0.982 prompt='a photo of a plastic wrapper on the floor'
-```
-
-Expected log with no object:
-
-```text
-[test] motion backend: dry-run
-[motion] dry-run forward
-[test] no object detected
-```
-
-Then run the movement test on the robot. Use `--motion auto` for normal testing because it loads the MasterPi/Hiwonder mecanum API:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python object_search_test.py \
-  --motion auto \
-  --distance-meters 1.0 \
-  --meters-per-second 0.20 \
-  --stop-distance-cm 15 \
-  --speed 35 \
-  --direction 90
-```
-
-The `1.0` meter distance is a timed maximum: `distance-meters / meters-per-second`. With `--stop-distance-cm 15`, the robot keeps moving after YOLO first sees an object, then stops when the ultrasonic sensor reports about `15 cm` or less. Start with `15` to `20 cm`; reduce toward `10 cm` only after it stops reliably.
-
-Adjust `--meters-per-second`, `--speed`, `--direction`, and `--stop-distance-cm` after testing on the floor. If the robot does not move forward with `--direction 90`, stop the test and try the correct Hiwonder mecanum direction for forward motion.
-
-You can also force the Hiwonder backend directly:
-
-```bash
-python object_search_test.py --motion hiwonder --max-seconds 5
-```
 
 ## YOLO v2 red/purple direct-label workflow
 
-This is the current trained-detector path for the lab floor test. Keep it separate from the older optional YOLO workflow above:
+YOLO v2 is the trained-detector path for the lab floor test. The detector has two classes, `red_useful` and `purple_trash`, and the visual-servo script uses those detector labels directly.
 
-- Old YOLO flow: one class named `floor_object`, then OpenCLIP decides `trash`, `keep`, or `ignore`.
-- YOLO v2 flow: two detector classes named `red_useful` and `purple_trash`; the visual-servo script can use those detector labels directly.
-
-Use separate folders so v1 and v2 files do not overwrite each other:
+Dataset and training outputs are stored separately:
 
 ```text
 yolo_dataset_v2/sortibot_detector/
@@ -869,11 +355,13 @@ ignore:          30-50 empty-floor images with no boxes
 hard negatives:  20-40 images with no boxes
 ```
 
+The final training dataset discussed during development contained 84 red/useful images, 102 purple/trash images, and 90 ignore or hard-negative images.
+
 Hard negatives are images that look tempting but should not be detected: floor speckles, shadows, wall edges, wires, hands, robot body parts, reflections, and other non-target objects.
 
 Images with the robot overlay text such as `Voltage: 7.3V` are acceptable because that overlay is part of the real robot camera output. If it causes false positives later, add more ignore/hard-negative images with the same overlay.
 
-### Laptop: create the v2 dataset folders
+### Laptop: create the YOLO v2 dataset folders
 
 Run this on the laptop:
 
@@ -914,7 +402,7 @@ names:
   1: purple_trash
 ```
 
-### Laptop: label v2 images with local CVAT
+### Laptop: label YOLO v2 images with local CVAT
 
 Run local CVAT from the project clone:
 
@@ -961,7 +449,7 @@ mkdir -p /tmp/sortibot_cvat_uploads
 In CVAT:
 
 ```text
-1. Create a task under the v2 project.
+1. Create a task under the YOLO v2 detector project.
 2. Upload /tmp/sortibot_cvat_uploads/sortibot_yolo_v2_raw.zip.
 3. Draw boxes only around the red useful object and the purple trash object.
 4. Leave ignore, empty-floor, and hard-negative images with no boxes.
@@ -980,7 +468,7 @@ cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/cvat
 docker-compose down
 ```
 
-### Laptop: copy exported CVAT labels into the v2 dataset
+### Laptop: copy exported CVAT labels into the YOLO v2 dataset
 
 Unzip the CVAT export into:
 
@@ -988,7 +476,7 @@ Unzip the CVAT export into:
 yolo_dataset_v2/cvat_export/
 ```
 
-For the current CVAT export layout, labels are under:
+For the YOLO v2 CVAT export layout, labels are under:
 
 ```text
 yolo_dataset_v2/cvat_export/obj_train_data/keep/
@@ -1053,7 +541,7 @@ Expected class IDs:
 
 The image count and label count should match for each split. Empty label files are expected for ignore and hard-negative images.
 
-### Laptop: train YOLO v2 on Apple Silicon
+### Laptop: train the YOLO v2 detector on Apple Silicon
 
 Run this on the laptop:
 
@@ -1067,6 +555,8 @@ python -m pip install ultralytics
 ```
 
 Train with MPS on Apple Silicon:
+
+MPS lets PyTorch use the Apple Silicon GPU instead of running all training operations on the CPU. On this project dataset, 80 epochs completed in approximately `0.080` hours with MPS, compared with `0.90` hours on CPU. This was about 11 times faster and made repeated training practical while the dataset was being refined.
 
 ```bash
 yolo detect train \
@@ -1094,7 +584,7 @@ yolo detect train \
   name=red_purple_detector
 ```
 
-The training device does not affect robot deployment. The robot uses the exported NCNN model, not MPS.
+The training device does not affect robot deployment. The robot uses the exported NCNN model, not MPS. Training directly on the Raspberry Pi is not recommended because it is much slower and uses the robot's limited processing and storage resources.
 
 ### Laptop: validate predictions visually
 
@@ -1126,7 +616,7 @@ Good signs:
 - Empty floor and hard-negative images have no boxes.
 - Small/far objects are detected at least often enough for the robot to approach during a 12 second test.
 
-### Laptop: export YOLO v2 to NCNN
+### Laptop: export the YOLO v2 detector to NCNN
 
 Run this on the laptop:
 
@@ -1155,7 +645,7 @@ model.ncnn.param
 model_ncnn.py
 ```
 
-### Laptop: copy YOLO v2 backend and model to robot
+### Laptop: copy the YOLO v2 backend and model to robot
 
 Run this on the laptop:
 
@@ -1166,7 +656,6 @@ rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
   --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
@@ -1187,7 +676,7 @@ Do not copy the laptop `.venv`, `runs_v2/`, or raw dataset to the robot. The rob
 ~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/
 ```
 
-### Robot: install YOLO runtime for v2
+### Robot: install the YOLO runtime
 
 Run this on the robot after the backend venv exists:
 
@@ -1200,7 +689,7 @@ python -m pip install --no-cache-dir ultralytics
 
 If the robot has no internet in access-point mode, connect internet with the USB Wi-Fi adapter first, or install the package while the robot is on an internet-connected network.
 
-### Robot: quick YOLO v2 model test
+### Robot: quick YOLO model test
 
 Run this on the robot:
 
@@ -1224,7 +713,7 @@ Expected names:
 
 If this fails with `No module named ultralytics`, install the YOLO runtime in the robot venv. If it fails with a model path error, copy the NCNN folder again.
 
-### Robot: YOLO v2 visual-servo approach test
+### Robot: YOLO visual-servo approach test
 
 Run this on the robot first with `--motion dry-run` if you only want to verify detections and commands without motor movement. Use `--motion auto` for the real MasterPi test.
 
@@ -1265,60 +754,7 @@ If the script says `unrecognized arguments: --classification-mode`, the backend 
 
 If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
 
-### Robot: LAB/color contrast visual-servo approach test
-
-This is the recommended approach for the current demo assumption: the floor is light, and target objects are darker or more saturated than the floor. The LAB/color contrast detector finds a compact non-floor blob, OpenCLIP classifies the crop as `trash`, `keep`, or `ignore`, then the robot uses mecanum `translation(x, y)` commands to center and approach only if the classification label is in `--approach-labels`.
-
-The pickup zone is not a classifier decision. It is only the camera position where the gripper should be able to reach the already-classified object.
-
-Run this on the laptop first to copy the latest backend code to the robot:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-rsync -av --delete \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  --exclude "__pycache__" \
-  --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
-  --exclude ".yolo-train-venv" \
-  Web-dashboard/backend/ \
-  pi@192.168.149.1:~/Web-dashboard/backend/
-```
-
-Optional but recommended: test the detector on a saved robot image before moving the robot:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-source .yolo-train-venv/bin/activate
-
-python Web-dashboard/backend/test_contrast_detector_image.py \
-  "$HOME/Desktop/sortibot_debug_detections/latest.jpg" \
-  --color-mode blue \
-  --output "$HOME/Desktop/sortibot_debug_detections/latest.contrast.jpg" \
-  --mask-output "$HOME/Desktop/sortibot_debug_detections/latest.mask.jpg"
-```
-
-Expected output is one or more detections with a tight box around the actual blue object, not a large floor region or non-blue object.
-
-Run this on the robot first without moving the motors:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python object_visual_servo_test.py \
-  --motion dry-run \
-  --max-seconds 5 \
-  --detector contrast \
-  --contrast-color-mode blue \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
-```
-
-Expected output is a stream of `no object visible`, `stabilizing`, `classified Trash/Keep/Ignore`, or `cmd=(x,y)` messages. The robot approaches only when the OpenCLIP label is included in `--approach-labels`. Use `trash,keep,ignore` while tuning movement with test objects; use `trash,keep` for real behavior.
-
-Then run this on the robot with the MasterPi motion backend:
+### Robot: current floor-distance approach and grab sequence
 
 If the camera position changes with arm pose, put the arm into a repeatable camera pose before the approach run. For the current robot, use the measured `my_home` servo pose from the MasterPi app rather than the IK coordinate. This is more repeatable after a servo replacement because it replays the actual controller pulses.
 
@@ -1364,7 +800,7 @@ python object_visual_servo_test.py \
 
 For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default.
 
-The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_x_cm` and `floor_y_cm`, drives only part of the estimated forward distance while far away, stops, re-detects, and repeats. Inside the configured heading-correction range, it uses `floor_x_cm` to estimate the angle to the object, rotates a little, stops, and remeasures before driving straight. Once the object is inside the trusted near range, it drives to `floor_y_cm + 3.5 cm`, stops, and starts the arm grab sequence. The extra 3.5 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom PID controller for the last mile.
+The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_x_cm` and `floor_y_cm`, drives only part of the estimated forward distance while far away, stops, re-detects, and repeats. Inside the configured heading-correction range, it uses `floor_x_cm` to estimate the angle to the object, rotates a little, stops, and remeasures before driving straight. Once the object is inside the trusted near range, it drives to `floor_y_cm + 2.5 cm`, stops, and starts the arm grab sequence. The extra 2.5 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom proportional controller for the last mile.
 
 The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
 
@@ -1397,11 +833,11 @@ python object_visual_servo_test.py \
   --distance-max-step-cm 25.0 \
   --distance-drive-speed 24 \
   --distance-drive-cm-per-second 19.0 \
-  --distance-heading-deadband-cm 4.0 \
+  --distance-heading-deadband-cm 5.0 \
   --distance-heading-min-y-cm 8.0 \
   --distance-heading-max-y-cm 50.0 \
   --distance-heading-max-deg 12.0 \
-  --distance-heading-yaw-rate 0.4 \
+  --distance-heading-yaw-rate 0.2 \
   --distance-heading-deg-per-second 45.0 \
   --approach-labels red_useful,purple_trash \
   --stable-frames 2 \
@@ -1424,21 +860,7 @@ python object_visual_servo_test.py \
 
 Tune these values one at a time:
 
-- `--contrast-color-mode`: use `blue` for the current demo so only blue objects are detected. Use `all` only if you intentionally want the old saturated/dark foreground detector.
-- `--contrast-blue-hue-min`, `--contrast-blue-hue-max`: widen this range if a blue object is missed because the camera sees it as cyan or purple; narrow it if other colors are detected.
-- `--contrast-blue-min-saturation`: lower it if pale blue objects are missed; raise it if gray floor regions are detected.
-- `--contrast-blue-min-value`, `--contrast-blue-max-value`: adjust these if blue objects are missed in shadows or glare.
-- `--contrast-use-lab`: leave this off on rough/textured floors. LAB contrast can treat normal floor texture as an object. Use it only on smoother floors.
-- `--contrast-lab-delta`: only matters when `--contrast-use-lab` is enabled. Lower it if objects are missed; raise it if floor texture is detected.
-- `--contrast-min-saturation`: lower it if colored objects are missed; raise it if floor texture is detected.
-- `--contrast-dark-value`: raise it if dark objects are missed; lower it if shadows are detected.
-- `--contrast-min-area`: lower it if small objects are missed; raise it if noise is detected.
-- `--contrast-max-area-ratio`: lower it if huge floor/background regions are detected.
-- `--contrast-max-box-width-ratio`, `--contrast-max-box-height-ratio`: lower these if the detector draws wide boxes over the floor instead of a compact object.
-- `--contrast-roi-top-ratio`: increase it if the detector sees wall/background above the floor; decrease it if far objects are cut off.
-- `--contrast-roi-bottom-ratio`: decrease it if the detector sees the green voltage overlay or nearby floor texture.
-- `--target-bottom-ratio`: increase it if the robot stops too far away; decrease it if it gets too close.
-- `--approach-mode floor-distance`: use floor projection instead of chassis x/bottom PID for the last-mile approach.
+- `--approach-mode floor-distance`: use floor projection instead of the older chassis x/bottom proportional controller for the last-mile approach.
 - `--camera-height-cm`, `--camera-pitch-down-deg`, `--camera-hfov-deg`: camera calibration values for the fixed home pose. If the camera or home pose changes, recalibrate these.
 - `--distance-reliable-cm`: once projected `floor_y_cm` is at or below this value, trust it for the final move. Start with `30.0` because the recent measured tests were accurate around `20-32 cm`.
 - `--distance-far-step-fraction`: when the object is farther than the reliable range, move only this fraction of projected `floor_y_cm`, then stop and remeasure.
@@ -1463,45 +885,8 @@ Tune these values one at a time:
 - `--home-servo-duration`: how long, in seconds, the controller should take to move from the current joint positions to the requested pulse positions. For example, `--home-servo-duration 1.5` means move over about 1.5 seconds; `1.0` means move faster, over about 1 second.
 - `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm`: only used when `--home-pose ik` is selected.
 - `--speed`: controls the no-object search speed when using the Hiwonder forward command.
-- `--max-y-speed`: decrease this if the robot overshoots the object during visual-servo approach.
-- `--x-deadband-ratio`: increase this if the robot keeps correcting left/right instead of stopping.
-- `--close-bottom-error-ratio`: keep this at `0.0` so the robot stops lateral correction once the object reaches the stop line.
-- `--uncentered-y-scale`: use `0.35` so the robot creeps forward while correcting left/right. If this is `0`, the robot tries pure sideways centering first; on some floors this can look like the robot detected the object but did not move.
-- `--invert-x-control`: add this if the object moves farther from the center line while tracking.
-- `--approach-labels`: use `trash,keep,ignore` while tuning movement with a test object; use `trash,keep` for real behavior.
-- `--ignore-cooldown-frames`: increase this if the same ignored object is classified repeatedly.
+- `--approach-labels`: keep this set to `red_useful,purple_trash` for the YOLO v2 detector.
 
-If the script prints `no object visible` but the robot does not move, check the motion backend line. It must be `motion backend: hiwonder-mecanum`, not `dry-run`. If it is `hiwonder-mecanum` and still does not move, increase `--speed` to `35`.
-
-The visual-servo script now runs the IK grab sequence automatically after the robot reaches the pickup zone. While tuning movement only, add `--no-grab` so the robot stops without moving the arm:
-
-```bash
-python object_visual_servo_test.py \
-  --motion auto \
-  --max-seconds 12 \
-  --detector contrast \
-  --target-bottom-ratio 0.68 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
-  --no-grab
-```
-
-When the robot reliably stops in a grabbable position, remove `--no-grab` and tune the fixed capture-coordinate grab:
-
-```bash
-python object_visual_servo_test.py \
-  --motion auto \
-  --max-seconds 12 \
-  --detector contrast \
-  --target-bottom-ratio 0.68 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
-  --grab-x-cm 0 \
-  --grab-y-cm 12.0 \
-  --grab-z-cm 0.1
-```
-
-The default grab coordinate comes from the Hiwonder color-sorting sample capture point. It may need calibration on the real robot. Gripper and approach parameters can be adjusted with `--gripper-open-pulse`, `--gripper-close-pulse`, `--grab-lift-cm`, `--grab-pitch`, `--grab-pitch-min`, and `--grab-pitch-max`.
 
 Test the ultrasonic sensor by itself on the robot:
 
@@ -1553,16 +938,14 @@ For the current MasterPi setup, use `--motion auto` or `--motion hiwonder`.
 
 The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
 
-### How to refresh the optional YOLO model after adding images
+### Refresh the YOLO v2 model after adding images
 
-This applies only if you are using the optional YOLO path. The current LAB/color contrast detector does not require YOLO retraining; tune the `--contrast-*` parameters instead.
+When you capture more robot-camera images:
 
-When you capture more images:
-
-1. Run **Laptop: pull new captures before labeling**.
-2. Add useful images to the YOLO dataset.
-3. Draw bounding boxes and export YOLO labels.
-4. Retrain or fine-tune YOLO on the laptop.
+1. Run **Laptop: pull captured images from robot**.
+2. Add suitable images to `yolo_dataset_v2` and preserve scene-based train/validation splitting.
+3. Draw bounding boxes in CVAT and export YOLO 1.1 labels. Keep hard-negative label files empty.
+4. Retrain or fine-tune YOLO11n on the Mac with `device=mps`.
 5. Export the new `best.pt` to NCNN.
 6. Copy the exported model folder to `~/Web-dashboard/models/detector/sortibot_yolo_ncnn_model/`.
 7. Restart the backend so it loads the new model.
