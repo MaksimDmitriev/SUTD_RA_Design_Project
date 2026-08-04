@@ -123,6 +123,8 @@ sudo nmcli device wifi connect "WiFiName" password "WiFiPassword" ifname wlan1
 
 ### Laptop: first build and sync
 
+⚠️ Only use `--delete` if you are sure you are copying the source of truth.
+
 Run this from your laptop:
 
 ```bash
@@ -239,7 +241,6 @@ rsync -av --delete \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   --exclude "__pycache__" \
   --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
   --exclude ".yolo-train-venv" \
   Web-dashboard/backend/ \
   pi@192.168.149.1:~/Web-dashboard/backend/
@@ -261,6 +262,13 @@ python -m uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
 ### Robot: optional camera tuning
+
+Save the current values before changing them so you can restore the initial configuration later on if needed. 
+The current values are the output of the following command:
+
+```bash
+v4l2-ctl -d /dev/video0 --all
+```
 
 Run this on the robot if the camera stream is too bright or over-saturated:
 
@@ -311,23 +319,6 @@ rsync -av \
   $HOME/Desktop/sortibot_debug_detections/
 ```
 
-### Laptop: sync captured images to robot
-
-Run this on the laptop only if you want the robot image folder to exactly match your laptop copy:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-export SUTD_RA_DESIGN_PROJECT_DATA=$PWD/Web-dashboard/data
-
-rsync -av --delete \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  "$SUTD_RA_DESIGN_PROJECT_DATA"/ \
-  pi@192.168.149.1:~/Web-dashboard/data/
-```
-
-Only use `--delete` if you are sure the laptop copy is the source of truth.
-
 ## Development mode
 
 ### Robot or laptop: backend only
@@ -355,222 +346,6 @@ npm run dev -- --host 0.0.0.0
 Then open the Vite URL printed by `npm run dev`. API calls are proxied to `127.0.0.1:8000`, so dashboard API calls only work if the FastAPI backend is also running on the same laptop.
 
 Do not use the laptop dev server for normal robot testing. Use `http://192.168.149.1:8000/` and `http://192.168.149.1:8000/#dashboard`.
-
-## OpenCLIP deployment
-
-OpenCLIP is used for semantic classification, not object localization. The normal flow is:
-
-```text
-camera frame -> optional crop -> OpenCLIP prompt classification -> Trash / Keep / Ignore
-```
-
-### Robot: verify OpenCLIP packages
-
-Run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -c "import torch; import torchvision; import open_clip; print(torch.__version__); print('OpenCLIP OK')"
-```
-
-Expected output should include `+cpu`, for example:
-
-```text
-2.12.1+cpu
-OpenCLIP OK
-```
-
-The first model load may download pretrained weights. That does not send your images anywhere, but it does require internet access once. After the weights are cached, inference is local.
-
-If the robot is in AP mode with no internet, either switch it to Wi-Fi/client mode temporarily or download the model cache on another machine and copy it to the robot.
-
-### Laptop: download OpenCLIP weights
-
-Run this on the laptop to download/cache the same OpenCLIP model weights used by the backend:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project/Web-dashboard/backend
-
-python3 -m venv .openclip-download-venv
-source .openclip-download-venv/bin/activate
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install torch torchvision open_clip_torch pillow
-
-python - <<'PY'
-from clip_classifier import ClipClassifier
-
-classifier = ClipClassifier()
-classifier.load()
-print("OpenCLIP weights downloaded into the local cache.")
-PY
-```
-
-### Laptop: copy OpenCLIP weights to robot
-
-Run this on the laptop after downloading the weights:
-
-```bash
-ssh -i $HOME/.ssh/sortibot_ed25519 pi@192.168.149.1 "mkdir -p ~/.cache/clip ~/.cache/huggingface"
-
-if [ -d "$HOME/.cache/clip" ]; then
-  rsync -av --delete \
-    -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-    "$HOME/.cache/clip"/ \
-    pi@192.168.149.1:~/.cache/clip/
-fi
-
-if [ -d "$HOME/.cache/huggingface" ]; then
-  rsync -av --delete \
-    -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-    "$HOME/.cache/huggingface"/ \
-    pi@192.168.149.1:~/.cache/huggingface/
-fi
-```
-
-If you did not set up the SSH key, remove each `-i $HOME/.ssh/sortibot_ed25519` and `-e "ssh -i $HOME/.ssh/sortibot_ed25519"` part.
-
-Copying these cache folders only copies model weights. The robot still needs the Python packages installed in `.venv`.
-
-### Robot: check copied OpenCLIP weights
-
-Run this on the robot:
-
-```bash
-du -h -d 2 ~/.cache/huggingface 2>/dev/null
-du -h -d 2 ~/.cache/clip 2>/dev/null
-```
-
-For the current backend model, a useful sign is a cache directory like:
-
-```text
-~/.cache/huggingface/hub/models--laion--CLIP-ViT-B-32-laion2B-s34B-b79K
-```
-
-### Robot: verify OpenCLIP model load
-
-Run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -c "from clip_classifier import ClipClassifier; c=ClipClassifier(); c.load(); print('OpenCLIP model loaded OK')"
-```
-
-If this prints `OpenCLIP model loaded OK`, packages and weights are working.
-
-### Robot: optional storage cleanup
-
-Run this on the robot to reclaim temporary package/cache space:
-
-```bash
-rm -rf ~/.cache/pip
-rm -rf /tmp/pip-*
-sudo apt-get clean
-df -h
-```
-
-For the current approach, use LAB/color contrast detection to create a tight object crop before OpenCLIP classification. YOLO is optional later if the contrast assumption stops being true.
-
-### How to improve OpenCLIP classification
-
-In the current setup, OpenCLIP is **not retrained** when you add new images. It is used as a zero-shot classifier:
-
-```text
-image or crop -> compare with text prompts -> Trash / Keep / Ignore
-```
-
-Adding images to `~/Web-dashboard/data/trash`, `~/Web-dashboard/data/keep`, or `~/Web-dashboard/data/ignore` gives you more examples for testing, but it does not change OpenCLIP weights.
-
-The current prompts are defined in:
-
-```text
-Web-dashboard/backend/clip_classifier.py
-```
-
-Look for:
-
-```python
-PROMPTS = {
-    "trash": [...],
-    "keep": [...],
-    "ignore": [...],
-}
-```
-
-If OpenCLIP misclassifies objects, first update those prompts. For example:
-
-```python
-PROMPTS = {
-    "trash": [
-        "a photo of a tissue on the floor",
-        "a photo of a plastic wrapper on the floor",
-        "a photo of a disposable food wrapper on the floor",
-        "a photo of rubbish or waste on the floor",
-    ],
-    "keep": [
-        "a photo of a useful personal object on the floor",
-        "a photo of a toy that should be kept",
-        "a photo of a sock or clothing item on the floor",
-        "a photo of an object that should be picked up and saved",
-    ],
-    "ignore": [
-        "a photo of a cable on the floor",
-        "a photo of a heavy object on the floor",
-        "a photo of an unsafe object on the floor",
-        "a photo of floor with no relevant object",
-    ],
-}
-```
-
-After changing prompts, sync backend changes to the robot and restart the backend:
-
-```bash
-cd $HOME/Desktop/Maksim/Robotics-Projects/SUTD_RA_Design_Project
-
-rsync -av --delete \
-  -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
-  --exclude "__pycache__" \
-  --exclude ".venv" \
-  --exclude ".openclip-download-venv" \
-  --exclude ".yolo-train-venv" \
-  Web-dashboard/backend/ \
-  pi@192.168.149.1:~/Web-dashboard/backend/
-```
-
-Then run this on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-python -m uvicorn app:app --host 0.0.0.0 --port 8000
-```
-
-The usual OpenCLIP improvement loop is:
-
-```text
-capture more images
-  -> pull images to laptop
-  -> test predictions
-  -> inspect wrong examples
-  -> adjust prompts and thresholds
-  -> sync backend to robot
-  -> test again
-```
-
-If prompt tuning is not enough, do **not** fine-tune the full OpenCLIP model first. A better next step is to freeze OpenCLIP and train a small classifier on top of OpenCLIP image embeddings.
-
-Recommended progression:
-
-1. Prompt tuning: fastest and easiest.
-2. LAB/color contrast crop before OpenCLIP: usually improves classification because background is removed.
-3. Threshold/policy tuning: send low-confidence predictions to `ignore`.
-4. Train a small classifier on OpenCLIP embeddings using your captured folders.
-5. Full OpenCLIP fine-tuning: only if the previous steps fail and you have a much larger dataset.
-
-For the current robot, steps 1-3 are the right priority. Full OpenCLIP fine-tuning is heavy and not recommended on the Raspberry Pi.
 
 ## Optional YOLO detection and retraining workflow
 
