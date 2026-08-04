@@ -25,9 +25,36 @@ class TargetPrediction:
 
 HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
     # Measured from the MasterPi app after positioning the arm in the desired
-    # camera-home pose. ID1/gripper is intentionally omitted.
-    "my_home": [(3, 1336), (4, 2460), (5, 1529), (6, 1480)],
+    # camera-home pose. Keep ID1/gripper fully open at pulse 2500.
+    "my_home": [(1, 2500), (3, 1336), (4, 2460), (5, 1529), (6, 1480)],
 }
+
+# Fixed settings for the robot's calibrated detection-and-pickup workflow.
+# These are deliberately not CLI options so normal runs remain repeatable.
+# Detection stack and model deployed on the robot.
+DEFAULT_DETECTOR = "yolo"
+DEFAULT_CLASSIFICATION_MODE = "detector-label"
+DEFAULT_MODEL_PATH = "/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model"
+DEFAULT_APPROACH_LABELS = frozenset({"red_useful", "purple_trash"})
+# Calibrated chassis and arm behavior.
+DEFAULT_APPROACH_MODE = "floor-distance"
+DEFAULT_HOME_SERVO_DURATION_SECONDS = 1.5
+DEFAULT_DISTANCE_DRIVE_SPEED = 24.0
+# Maximum time allowed for the camera search and chassis approach loop.
+DEFAULT_MAX_RUN_SECONDS = 25.0
+# Minimum YOLO confidence accepted as a detection.
+DEFAULT_YOLO_CONFIDENCE = 0.35
+# Measured forward speed on the real floor when distance-drive speed is 24.
+CALIBRATED_DISTANCE_DRIVE_CM_PER_SECOND = 19.0
+# Consecutive detections required before the target is accepted.
+DEFAULT_STABLE_DETECTION_FRAMES = 2
+# Consecutive pickup-ready observations required before finishing the approach.
+DEFAULT_PICKUP_READY_FRAMES = 1
+# Refine the arm's x/y grab position from camera feedback before descending.
+DEFAULT_ARM_VISUAL_ALIGNMENT = True
+# Keep timestamped diagnostic frames and one dashboard-friendly latest frame.
+DEFAULT_DEBUG_FRAME_DIRECTORY = "~/Web-dashboard/data/debug_detections"
+DEFAULT_DEBUG_LATEST_FRAME = f"{DEFAULT_DEBUG_FRAME_DIRECTORY}/latest.jpg"
 
 FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 2.5
 POST_GRAB_WRIST_POSE: list[tuple[int, int]] = [(5, 1500)]
@@ -42,32 +69,6 @@ POST_GRAB_HOME_POSE: list[tuple[int, int]] = [
     (6, 1480),
 ]
 
-
-def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
-    positions = []
-    for item in value.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            servo_id_raw, pulse_raw = item.split(":", 1)
-            servo_id = int(servo_id_raw)
-            pulse = int(pulse_raw)
-        except ValueError as exc:
-            raise argparse.ArgumentTypeError(
-                "servo pulses must use servo_id:pulse pairs, for example "
-                "3:1336,4:2460,5:1529,6:1480"
-            ) from exc
-        if servo_id < 1 or servo_id > 6:
-            raise argparse.ArgumentTypeError("servo_id must be between 1 and 6")
-        if pulse < 500 or pulse > 2500:
-            raise argparse.ArgumentTypeError("pulse must be between 500 and 2500")
-        positions.append((servo_id, pulse))
-    if not positions:
-        raise argparse.ArgumentTypeError("at least one servo_id:pulse pair is required")
-    return positions
-
-
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -75,18 +76,6 @@ def parse_args():
             "crop. Optional grabbing uses MasterPi inverse kinematics."
         )
     )
-    parser.add_argument(
-        "--detector",
-        choices=["contrast", "yolo"],
-        default="contrast",
-        help="Object detector. contrast is recommended for non-light objects on a light floor.",
-    )
-    parser.add_argument(
-        "--model",
-        default="/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model",
-        help="Path to the old custom YOLO NCNN model directory on the robot.",
-    )
-    parser.add_argument("--conf", type=float, default=0.25)
     parser.add_argument("--imgsz", type=int, default=640)
     parser.add_argument("--contrast-min-area", type=float, default=45.0)
     parser.add_argument("--contrast-max-area-ratio", type=float, default=0.04)
@@ -112,22 +101,12 @@ def parse_args():
     parser.add_argument("--contrast-max-box-width-ratio", type=float, default=0.38)
     parser.add_argument("--contrast-max-box-height-ratio", type=float, default=0.34)
     parser.add_argument("--contrast-box-padding-ratio", type=float, default=0.25)
-    parser.add_argument("--max-seconds", type=float, default=12.0)
     parser.add_argument("--poll-seconds", type=float, default=0.12)
     parser.add_argument(
         "--motion",
-        choices=["auto", "hiwonder", "dry-run"],
+        choices=["dry-run"],
         default="auto",
-    )
-    parser.add_argument(
-        "--approach-mode",
-        choices=["visual-servo", "floor-distance"],
-        default="visual-servo",
-        help=(
-            "visual-servo uses image x/bottom PID. floor-distance projects the "
-            "detected box onto the floor plane, drives partway, remeasures, then "
-            "drives to a near standoff before grabbing."
-        ),
+        help="Use --motion dry-run to test without commanding the chassis.",
     )
     parser.add_argument("--speed", type=int, default=35)
     parser.add_argument(
@@ -170,8 +149,6 @@ def parse_args():
             "0 means the object box has reached the target bottom line."
         ),
     )
-    parser.add_argument("--stable-frames", type=int, default=3)
-    parser.add_argument("--pickup-frames", type=int, default=2)
     parser.add_argument(
         "--post-pickup-drive-seconds",
         type=float,
@@ -187,23 +164,6 @@ def parse_args():
         type=int,
         default=8,
         help="Frames to keep moving after an ignored object before classifying again.",
-    )
-    parser.add_argument(
-        "--approach-labels",
-        default=None,
-        help=(
-            "Comma-separated labels that the robot should approach. Defaults to "
-            "red_useful,purple_trash for YOLO detector-label mode, otherwise trash,keep."
-        ),
-    )
-    parser.add_argument(
-        "--classification-mode",
-        choices=["auto", "openclip", "detector-label"],
-        default="auto",
-        help=(
-            "How to decide whether to approach a detected object. auto uses YOLO "
-            "detector labels directly for --detector yolo and OpenCLIP for contrast."
-        ),
     )
     parser.add_argument(
         "--search-y-speed",
@@ -255,16 +215,6 @@ def parse_args():
         help="Forward proportional gain in robot translation units.",
     )
     parser.add_argument(
-        "--debug-frame-dir",
-        default=None,
-        help="Directory for annotated frames, for example ~/Web-dashboard/data/debug_detections.",
-    )
-    parser.add_argument(
-        "--debug-latest-frame",
-        default=None,
-        help="Overwrite this path with the latest annotated detection frame.",
-    )
-    parser.add_argument(
         "--grab",
         dest="grab",
         action="store_true",
@@ -297,26 +247,11 @@ def parse_args():
     parser.add_argument(
         "--home-pose",
         choices=["ik", *HOME_SERVO_POSES.keys()],
-        default="ik",
+        default="my_home",
         help=(
             "Startup arm pose for --home-arm-before-approach/--home-arm-only. "
             "ik uses --grab-home-x/y/z; my_home replays measured servo pulses."
         ),
-    )
-    parser.add_argument(
-        "--home-servo-pulses",
-        type=parse_servo_pulses,
-        default=None,
-        help=(
-            "Optional comma-separated servo_id:pulse startup pose, for example "
-            "3:1336,4:2460,5:1529,6:1480. Overrides --home-pose."
-        ),
-    )
-    parser.add_argument("--home-servo-duration", type=float, default=1.5)
-    parser.add_argument(
-        "--open-gripper-before-approach",
-        action="store_true",
-        help="Open the gripper after startup arm homing.",
     )
     parser.add_argument(
         "--home-servo4-angle",
@@ -349,15 +284,6 @@ def parse_args():
     parser.add_argument("--grab-pitch", type=float, default=-90.0)
     parser.add_argument("--grab-pitch-min", type=float, default=-90.0)
     parser.add_argument("--grab-pitch-max", type=float, default=0.0)
-    parser.add_argument(
-        "--arm-visual-align",
-        action="store_true",
-        help=(
-            "After the chassis reaches the pickup zone, move the arm above the "
-            "grab point and use the camera to make small x/y IK nudges before "
-            "the final grab descent."
-        ),
-    )
     parser.add_argument(
         "--arm-align-target-x-ratio",
         type=float,
@@ -416,14 +342,14 @@ def parse_args():
         action="store_true",
         help="Reverse y-coordinate nudges during arm visual alignment.",
     )
-    parser.add_argument("--gripper-open-pulse", type=int, default=2000)
+    parser.add_argument("--gripper-open-pulse", type=int, default=2500)
     parser.add_argument("--gripper-close-pulse", type=int, default=1500)
     parser.add_argument(
         "--distance-reliable-cm",
         type=float,
         default=30.0,
         help=(
-            "For --approach-mode floor-distance, trust the projected floor "
+            "For floor-distance approach, trust the projected floor "
             "distance as final only when the object is at or below this y distance."
         ),
     )
@@ -432,7 +358,7 @@ def parse_args():
         type=float,
         default=0.5,
         help=(
-            "For --approach-mode floor-distance, when the object is outside the "
+            "For floor-distance approach, when the object is outside the "
             "reliable range, drive this fraction of the projected y distance and "
             "then remeasure."
         ),
@@ -452,32 +378,13 @@ def parse_args():
             "grab instead of trying to command a tiny chassis move."
         ),
     )
-    parser.add_argument(
-        "--distance-drive-speed",
-        type=float,
-        default=None,
-        help=(
-            "Forward Hiwonder speed used for floor-distance timed moves. Defaults "
-            "to --max-y-speed."
-        ),
-    )
-    parser.add_argument(
-        "--distance-drive-cm-per-second",
-        type=float,
-        default=10.0,
-        help=(
-            "Measured real forward speed for --distance-drive-speed. The script "
-            "uses move_cm / this value to choose drive time."
-        ),
-    )
     parser.set_defaults(distance_heading_correction=True)
     parser.add_argument(
         "--no-distance-heading-correction",
         dest="distance_heading_correction",
         action="store_false",
         help=(
-            "Disable floor_x_cm heading correction for --approach-mode "
-            "floor-distance."
+            "Disable floor_x_cm heading correction for floor-distance approach."
         ),
     )
     parser.add_argument(
@@ -582,6 +489,21 @@ def parse_args():
     parser.add_argument("--camera-fy-px", type=float, default=None)
     parser.add_argument("--camera-cx-px", type=float, default=None)
     parser.add_argument("--camera-cy-px", type=float, default=None)
+    parser.set_defaults(
+        detector=DEFAULT_DETECTOR,
+        model=DEFAULT_MODEL_PATH,
+        approach_mode=DEFAULT_APPROACH_MODE,
+        home_servo_duration=DEFAULT_HOME_SERVO_DURATION_SECONDS,
+        distance_drive_speed=DEFAULT_DISTANCE_DRIVE_SPEED,
+        max_seconds=DEFAULT_MAX_RUN_SECONDS,
+        conf=DEFAULT_YOLO_CONFIDENCE,
+        distance_drive_cm_per_second=CALIBRATED_DISTANCE_DRIVE_CM_PER_SECOND,
+        stable_frames=DEFAULT_STABLE_DETECTION_FRAMES,
+        pickup_frames=DEFAULT_PICKUP_READY_FRAMES,
+        arm_visual_align=DEFAULT_ARM_VISUAL_ALIGNMENT,
+        debug_frame_dir=DEFAULT_DEBUG_FRAME_DIRECTORY,
+        debug_latest_frame=DEFAULT_DEBUG_LATEST_FRAME,
+    )
     return parser.parse_args()
 
 
@@ -695,7 +617,7 @@ def drive_forward_for_distance(motion, move_cm: float, speed: float, cm_per_seco
     if move_cm <= 0:
         return 0.0
     if cm_per_second <= 0:
-        raise ValueError("--distance-drive-cm-per-second must be greater than 0")
+        raise ValueError("distance drive calibration must be greater than 0 cm/s")
     duration_seconds = move_cm / cm_per_second
     motion.translate(0.0, speed)
     time.sleep(duration_seconds)
@@ -1131,42 +1053,19 @@ def finish_target(
 
 def main() -> int:
     args = parse_args()
-    classification_mode = args.classification_mode
-    if classification_mode == "auto":
-        classification_mode = "detector-label" if args.detector == "yolo" else "openclip"
-
-    if args.approach_labels is None:
-        args.approach_labels = (
-            "red_useful,purple_trash"
-            if classification_mode == "detector-label"
-            else "trash,keep"
-        )
-
-    approach_labels = {
-        label.strip().lower()
-        for label in args.approach_labels.split(",")
-        if label.strip()
-    }
+    classification_mode = DEFAULT_CLASSIFICATION_MODE
+    approach_labels = set(DEFAULT_APPROACH_LABELS)
     if args.approach_mode == "floor-distance" and (
         args.camera_height_cm is None or args.camera_pitch_down_deg is None
     ):
         raise SystemExit(
-            "--approach-mode floor-distance requires --camera-height-cm and "
+            "floor-distance approach requires --camera-height-cm and "
             "--camera-pitch-down-deg"
         )
 
     if args.home_arm_before_approach or args.home_arm_only:
         arm = create_arm(args)
-        if args.home_servo_pulses is not None:
-            print(
-                "[visual-servo] homing arm with custom servo pulses "
-                f"{args.home_servo_pulses}"
-            )
-            arm.set_servo_pulses(
-                args.home_servo_pulses,
-                duration_seconds=args.home_servo_duration,
-            )
-        elif args.home_pose != "ik":
+        if args.home_pose != "ik":
             positions = HOME_SERVO_POSES[args.home_pose]
             print(
                 f"[visual-servo] homing arm to {args.home_pose} servo pose "
@@ -1203,8 +1102,6 @@ def main() -> int:
                 args.home_servo4_angle,
                 duration_seconds=args.home_servo4_duration,
             )
-        if args.open_gripper_before_approach:
-            arm.open_gripper()
         if args.home_arm_only:
             print("[visual-servo] arm homed; exiting")
             return 0
@@ -1403,11 +1300,7 @@ def main() -> int:
                 )
                 ready = move_cm <= 0.0
                 pickup_count = pickup_count + 1 if ready else 0
-                drive_speed = (
-                    args.distance_drive_speed
-                    if args.distance_drive_speed is not None
-                    else args.max_y_speed
-                )
+                drive_speed = args.distance_drive_speed
                 print(
                     "[visual-servo] "
                     f"target={active_prediction.label} "

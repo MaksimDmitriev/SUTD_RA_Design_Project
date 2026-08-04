@@ -715,32 +715,20 @@ If this fails with `No module named ultralytics`, install the YOLO runtime in th
 
 ### Robot: YOLO visual-servo approach test
 
-Run this on the robot first with `--motion dry-run` if you only want to verify detections and commands without motor movement. Use `--motion auto` for the real MasterPi test.
+Run this on the robot first with `--motion dry-run` if you only want to verify detections and commands without motor movement. Omit `--motion` for the real MasterPi test.
 
 ```bash
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 python object_visual_servo_test.py \
-  --motion auto \
-  --detector yolo \
-  --classification-mode detector-label \
-  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
-  --max-seconds 12 \
-  --conf 0.35 \
-  --target-bottom-ratio 0.68 \
-  --x-deadband-ratio 0.06 \
-  --bottom-deadband-ratio 0.03 \
-  --close-bottom-error-ratio 0.0 \
-  --search-y-speed 20 \
-  --max-x-speed 18 \
-  --max-y-speed 20 \
-  --uncentered-y-scale 0.35 \
-  --approach-labels red_useful,purple_trash \
-  --stable-frames 3 \
-  --pickup-frames 2 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
+  --home-arm-before-approach \
+  --camera-height-cm 19.6 \
+  --camera-pitch-down-deg 17.2 \
+  --camera-hfov-deg 79.1 \
+  --distance-reliable-cm 30.0 \
+  --distance-far-step-fraction 0.5 \
+  --distance-max-step-cm 25.0
 ```
 
 Expected behavior:
@@ -750,15 +738,19 @@ Expected behavior:
 - If only floor/ignore objects are visible, the script should not approach a false box.
 - The latest annotated frame is written to `~/Web-dashboard/data/debug_detections/latest.jpg`.
 
-If the script says `unrecognized arguments: --classification-mode`, the backend code on the robot is old. Copy `Web-dashboard/backend/` to the robot again.
-
 If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
 
 ### Robot: current floor-distance approach and grab sequence
 
 If the camera position changes with arm pose, put the arm into a repeatable camera pose before the approach run. For the current robot, use the measured `my_home` servo pose from the MasterPi app rather than the IK coordinate. This is more repeatable after a servo replacement because it replays the actual controller pulses.
 
-This is not meant to be magic: the arm servos are controlled by PWM pulse values. A pulse value is the low-level target position sent to one servo. We first moved the arm manually/in the MasterPi app until the camera saw the object from a useful angle, then read the actual pulse values from the controller. Replaying the same pulses puts the joints back into that same camera pose every run. ID1 is the gripper, so it is not part of the camera home pose.
+This is not meant to be magic: the arm servos are controlled by PWM pulse values. A pulse value is the low-level target position sent to one servo. We first moved the arm manually/in the MasterPi app until the camera saw the object from a useful angle, then read the actual pulse values from the controller. Replaying the same pulses puts the joints back into that same camera pose every run. ID1 is the gripper and is kept fully open at pulse 2500 in the home pose.
+
+The fixed home pose is `ID1=2500, ID3=1336, ID4=2460, ID5=1529, ID6=1480`, replayed over 1.5 seconds. Run `python object_visual_servo_test.py --home-arm-only` to command it.
+
+For calibration history, the recorded intermediate pose was `ID1=500, ID3=600, ID4=600, ID5=2300, ID6=600`, and the recorded wall-facing pose was `ID3=1500, ID4=2500, ID5=1500, ID6=1500`. These alternate pulse sets are documentation only; `object_visual_servo_test.py` intentionally no longer accepts arbitrary home pulses.
+
+The intermediate pose was used because small requested changes—such as moving a PWM value from 500 to 520 or 530—sometimes produced no visible movement. The exact cause was not confirmed and could involve an internal control threshold, servo resolution, backlash, or static friction. Starting from a clearly different pose improved the repeatability of the final camera position.
 
 How one pulse value maps to the same joint angle:
 
@@ -781,28 +773,7 @@ servo ID3 treats 1336 as its target
 servo ID3 rotates until its internal feedback says it reached that target
 ```
 
-Do not use `--grab-home-x-cm`, `--grab-home-y-cm`, and `--grab-home-z-cm` as the normal camera startup pose unless you are intentionally testing IK. An IK `x,y,z` coordinate describes the end-effector point in space, not the full camera pose. The same end-effector point can still depend on pitch limits, solver choice, servo calibration, and how a replaced servo was mounted. For the camera startup pose we need the same joint angles because the camera is attached to the arm, so raw pulse replay is the more repeatable choice.
-
-```bash
-python object_visual_servo_test.py \
-  --home-arm-only \
-  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
-  --home-servo-duration 1.5
-```
-
-After copying the updated backend, the same pose is also available as:
-
-```bash
-python object_visual_servo_test.py \
-  --home-arm-only \
-  --home-pose my_home
-```
-
-For the actual detect, approach, and grab run, keep `--home-arm-before-approach` in the command so every run starts from the same arm/camera pose. Do not add `--no-grab` for this run; grabbing is enabled by default.
-
-The current preferred chassis approach is `--approach-mode floor-distance`. It projects the YOLO box bottom-center pixel onto the floor plane, estimates `floor_x_cm` and `floor_y_cm`, drives only part of the estimated forward distance while far away, stops, re-detects, and repeats. Inside the configured heading-correction range, it uses `floor_x_cm` to estimate the angle to the object, rotates a little, stops, and remeasures before driving straight. Once the object is inside the trusted near range, it drives to `floor_y_cm + 2.5 cm`, stops, and starts the arm grab sequence. The extra 2.5 cm compensates for the camera being mounted behind the practical arm pickup workspace. This replaces the old final push and does not use the chassis x/bottom proportional controller for the last mile.
-
-The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values below are the starting arm capture point used after the robot stops near the object. With `--arm-visual-align`, the camera checks the object again while the arm is hovering above that point and makes small `x/y` IK nudges before the final low grab.
+The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values are the starting arm capture point used after the robot stops near the object.
 
 After closing the gripper, the script lifts the object, moves to a release pose, opens the gripper, then returns to the raw camera home pose. The release pose depends on the detector label:
 
@@ -815,128 +786,24 @@ cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 python object_visual_servo_test.py \
-  --motion auto \
-  --approach-mode floor-distance \
-  --detector yolo \
-  --classification-mode detector-label \
-  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
-  --max-seconds 25 \
-  --conf 0.35 \
-  --home-servo-pulses "1:2500,3:1336,4:2460,5:1529,6:1480" \
-  --home-servo-duration 1.5 \
-  --open-gripper-before-approach \
+  --home-arm-before-approach \
   --camera-height-cm 19.6 \
   --camera-pitch-down-deg 17.2 \
   --camera-hfov-deg 79.1 \
   --distance-reliable-cm 30.0 \
   --distance-far-step-fraction 0.5 \
-  --distance-max-step-cm 25.0 \
-  --distance-drive-speed 24 \
-  --distance-drive-cm-per-second 19.0 \
-  --distance-heading-deadband-cm 5.0 \
-  --distance-heading-min-y-cm 8.0 \
-  --distance-heading-max-y-cm 50.0 \
-  --distance-heading-max-deg 12.0 \
-  --distance-heading-yaw-rate 0.2 \
-  --distance-heading-deg-per-second 45.0 \
-  --approach-labels red_useful,purple_trash \
-  --stable-frames 2 \
-  --pickup-frames 1 \
-  --speed 24 \
-  --direction 90 \
-  --home-arm-before-approach \
-  --arm-visual-align \
-  --arm-align-target-x-ratio 0.50 \
-  --arm-align-target-y-ratio 0.55 \
-  --arm-align-deadband-ratio 0.08 \
-  --arm-align-max-steps 6 \
-  --arm-align-step-cm 0.4 \
-  --grab-x-cm 0 \
-  --grab-y-cm 12.0 \
-  --grab-z-cm 0.1 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg
+  --distance-max-step-cm 25.0
 ```
 
 Tune these values one at a time:
 
-- `--approach-mode floor-distance`: use floor projection instead of the older chassis x/bottom proportional controller for the last-mile approach.
-- `--camera-height-cm`, `--camera-pitch-down-deg`, `--camera-hfov-deg`: camera calibration values for the fixed home pose. If the camera or home pose changes, recalibrate these.
-- `--distance-reliable-cm`: once projected `floor_y_cm` is at or below this value, trust it for the final move. Start with `30.0` because the recent measured tests were accurate around `20-32 cm`.
-- `--distance-far-step-fraction`: when the object is farther than the reliable range, move only this fraction of projected `floor_y_cm`, then stop and remeasure.
-- `--distance-max-step-cm`: maximum single forward move. Keep this bounded so one bad far estimate cannot cause a long overshoot.
-- `--distance-drive-speed`: Hiwonder forward speed used during timed distance moves.
-- `--distance-drive-cm-per-second`: measured real forward speed for `--distance-drive-speed`. Tune this on the actual floor; if it is wrong, the robot will drive the wrong physical distance.
-- `--distance-heading-deadband-cm`: ignore horizontal projected offset while `abs(floor_x_cm)` is this small or smaller.
-- `--distance-heading-min-y-cm`, `--distance-heading-max-y-cm`: only rotate from `floor_x_cm` inside this forward-distance range. This avoids noisy far-away correction and avoids turning when the object is already under the camera.
-- `--distance-heading-max-deg`: maximum single turn before stopping and remeasuring.
-- `--distance-heading-yaw-rate`: Hiwonder yaw speed used for the turn. The SDK uses about `-2..2`; keep this conservative.
-- `--distance-heading-deg-per-second`: measured real turn rate for the selected yaw rate. If this is wrong, the angle estimate can be correct but the robot will turn the wrong physical amount.
-- `--invert-distance-heading`: add this if `floor_x_cm` correction turns the robot away from the object.
-- `--post-pickup-drive-seconds`: deprecated. Keep it omitted or `0`; the floor-distance approach ignores the old final push.
-- `--arm-visual-align`: after the chassis has stopped, the arm opens the gripper, moves above the grab coordinate, looks through the camera again, and nudges the IK `x/y` coordinate before lowering to grab.
-- `--arm-align-target-x-ratio`, `--arm-align-target-y-ratio`: where the object center should appear in the camera frame during arm alignment. Start with `0.50,0.55`; tune these if the gripper is correctly positioned while the object appears slightly off-center in the camera.
-- `--arm-align-deadband-ratio`: how close the object center must be to the arm-alignment target point before the script stops nudging and grabs.
-- `--arm-align-step-cm`: maximum arm-coordinate movement per alignment nudge. Keep this small; `0.4` means each correction is at most 4 mm.
-- `--invert-arm-align-x`, `--invert-arm-align-y`: add one of these if an arm nudge moves the object farther from the target point in the camera image.
-- `--home-arm-before-approach`: use this when the arm changes the camera position. It moves the arm before the camera loop starts.
-- `--home-pose my_home`: current preferred startup pose. It replays measured PWM servo pulses `ID3=1336`, `ID4=2460`, `ID5=1529`, `ID6=1480`. ID1/gripper is not included.
-- `--home-servo-pulses`: override the named home pose with measured values, for example `3:1336,4:2460,5:1529,6:1480`.
-- `--home-servo-duration`: how long, in seconds, the controller should take to move from the current joint positions to the requested pulse positions. For example, `--home-servo-duration 1.5` means move over about 1.5 seconds; `1.0` means move faster, over about 1 second.
-- `--grab-home-x-cm`, `--grab-home-y-cm`, `--grab-home-z-cm`: only used when `--home-pose ik` is selected.
-- `--speed`: controls the no-object search speed when using the Hiwonder forward command.
-- `--approach-labels`: keep this set to `red_useful,purple_trash` for the YOLO v2 detector.
-
-
-Test the ultrasonic sensor by itself on the robot:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python - <<'PY'
-from robot_sonar import SonarDistanceSensor
-import time
-
-sensor = SonarDistanceSensor()
-for _ in range(10):
-    print(f"{sensor.read_cm():.1f} cm")
-    time.sleep(0.2)
-PY
-```
-
-The MasterPi sonar API returns millimeters. The SortiBot wrapper converts it to centimeters.
-
-If the script prints `motion backend: dry-run`, it did not find the robot motion API. Run this on the robot and inspect the import failures:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python object_search_test.py --motion auto --motion-debug --max-seconds 2
-```
-
-If the debug output includes `ModuleNotFoundError("No module named 'serial'")`, install the serial package in the robot venv:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -m pip install --no-cache-dir pyserial
-```
-
-If the ultrasonic sensor fails with `ModuleNotFoundError("No module named 'smbus2'")`, install the I2C package in the robot venv:
-
-```bash
-cd ~/Web-dashboard/backend
-source .venv/bin/activate
-
-python -m pip install --no-cache-dir smbus2
-```
-
-For the current MasterPi setup, use `--motion auto` or `--motion hiwonder`.
-
-The script always sends `stop` in a `finally` block, so it should stop the motors even if detection/classification raises an error.
+- `--home-arm-before-approach`: move the arm to the fixed `my_home` servo pose before starting detection. This gives the camera a repeatable position and keeps the gripper open at pulse 2500.
+- `--camera-height-cm 19.6`: height of the camera's optical center above the floor. Floor projection uses it to estimate the object's forward distance.
+- `--camera-pitch-down-deg 17.2`: downward angle of the camera's optical axis from horizontal. An incorrect pitch causes the projected distance to be consistently too long or too short.
+- `--camera-hfov-deg 79.1`: camera horizontal field of view. It determines how image pixels map to horizontal and forward floor coordinates.
+- `--distance-reliable-cm 30.0`: at or below this projected forward distance, trust the measurement for the final approach move. Farther away, the robot moves only partway and measures again.
+- `--distance-far-step-fraction 0.5`: when the object is outside the reliable range, drive half of the projected forward distance before stopping and remeasuring.
+- `--distance-max-step-cm 25.0`: cap any single forward movement at 25 cm so a bad projection cannot command one long drive.
 
 ### Refresh the YOLO v2 model after adding images
 

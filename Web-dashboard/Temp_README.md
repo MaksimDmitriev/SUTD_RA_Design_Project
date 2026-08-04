@@ -6,12 +6,6 @@ source .venv/bin/activate
 
 
 python object_visual_servo_test.py \
-  --motion auto \
-  --detector yolo \
-  --classification-mode detector-label \
-  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
-  --max-seconds 25 \
-  --conf 0.35 \
   --target-x-ratio 0.50 \
   --target-bottom-ratio 0.9 \
   --x-deadband-ratio 0.09 \
@@ -22,24 +16,16 @@ python object_visual_servo_test.py \
   --min-x-speed 32 \
   --max-y-speed 48 \
   --min-y-speed 32 \
-  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
-  --home-servo-duration 1.5 \
   --post-pickup-drive-seconds 0.5 \
   --kp-x 120 \
   --kp-y 45 \
   --uncentered-y-scale 0.3 \
-  --approach-labels red_useful,purple_trash \
-  --stable-frames 2 \
-  --pickup-frames 1 \
   --speed 24 \
   --direction 90 \
   --home-arm-before-approach \
   --grab-x-cm 0 \
   --grab-y-cm 12.0 \
   --grab-z-cm 0.1 \
-  --debug-frame-dir ~/Web-dashboard/data/debug_detections \
-  --debug-latest-frame ~/Web-dashboard/data/debug_detections/latest.jpg \
-  --arm-visual-align \
   --arm-align-target-x-ratio 0.50 \
   --arm-align-target-y-ratio 0.55 \
   --arm-align-deadband-ratio 0.08 \
@@ -82,19 +68,13 @@ cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 
-python object_visual_servo_test.py \
-  --home-arm-only \
-  --home-servo-pulses "3:1336,4:2460,5:1529,6:1480" \
-  --home-servo-duration 1.5
+python object_visual_servo_test.py --home-arm-only
 
 
 
-OTHER POSE:
+RECORDED OTHER POSE (documentation only):
 
-python object_visual_servo_test.py \
-  --home-arm-only \
-  --home-servo-pulses "3:600,4:2000,5:1300,6:1600" \
-  --home-servo-duration 1.5
+ID3=600, ID4=2000, ID5=1300, ID6=1600
 
 
 
@@ -110,15 +90,11 @@ python object_visual_servo_test.py \
 
 
 
-  -----
-looking at the floor
+-----
+RECORDED FLOOR-LOOKING POSE (documentation only):
 
-python object_visual_servo_test.py \
-  --home-arm-only \
-  --home-servo-pulses "3:800,4:2460,5:1529,6:1405" \
-  --home-servo-duration 1.5
-
-  -----
+ID3=800, ID4=2460, ID5=1529, ID6=1405
+-----
 
 
 
