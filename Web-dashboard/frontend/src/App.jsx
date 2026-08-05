@@ -11,7 +11,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import heroImage from "./assets/sortibot-hero.png";
+import heroImage from "./assets/gripper-extension-oblique.jpg";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -115,7 +115,10 @@ function ProjectPage() {
           </div>
         </div>
         <div className="hero-visual">
-          <img src={heroImage} alt="SortiBot robot sorting objects on a lab bench" />
+          <img
+            src={heroImage}
+            alt="The actual SortiBot with custom PLA gripper extensions approaching demonstration objects"
+          />
         </div>
       </section>
 

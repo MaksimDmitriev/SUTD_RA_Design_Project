@@ -1325,7 +1325,7 @@ def main() -> int:
                             f"{heading_reason}; remeasuring"
                         )
                         stable_count = 0
-                        time.sleep(args.poll_seconds)
+                        time.sleep(0.5)
                         continue
 
                     save_debug_frame(

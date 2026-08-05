@@ -61,13 +61,16 @@ checkpoints/
 *.webp
 !Web-dashboard/frontend/src/assets/
 !Web-dashboard/frontend/src/assets/*.png
+!Web-dashboard/frontend/src/assets/*.jpg
 !docs/**/*.png
 !docs/**/*.jpg
 
 # Generated reports and exports
+output/
 outputs/
 runs/
 runs_v2/
+/tmp/
 
 # Other projects 
 cvat/
