@@ -413,7 +413,7 @@ def parse_args():
     parser.add_argument(
         "--distance-heading-yaw-rate",
         type=float,
-        default=0.2,
+        default=0.14,
         help=(
             "Hiwonder yaw angular speed for heading correction. The SDK range is "
             "roughly -2..2."
