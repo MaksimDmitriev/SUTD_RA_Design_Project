@@ -583,8 +583,19 @@ def distance_approach_move_cm(projection: dict, args) -> tuple[float, str, bool]
         finishes_approach = True
     else:
         fraction = clamp(args.distance_far_step_fraction, 0.05, 0.95)
-        move_cm = clamp(floor_y * fraction, 0.0, args.distance_max_step_cm)
+        move_cm = clamp(
+            min(
+                floor_y * fraction,
+                floor_y - args.distance_reliable_cm,
+            ),
+            0.0,
+            args.distance_max_step_cm,
+        )
         reason = "far partial move"
+        if move_cm < args.distance_min_step_cm:
+            move_cm = floor_y + FLOOR_DISTANCE_FINAL_OVERSHOOT_CM
+            reason = "near reliable boundary; final move"
+            finishes_approach = True
 
     if move_cm < args.distance_min_step_cm:
         return 0.0, f"{reason}; below min step", finishes_approach
