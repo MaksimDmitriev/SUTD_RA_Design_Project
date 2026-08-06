@@ -271,7 +271,7 @@ def parse_args():
     parser.set_defaults(grab=True)
     parser.add_argument("--grab-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-y-cm", type=float, default=12.0)
-    parser.add_argument("--grab-z-cm", type=float, default=0.1)
+    parser.add_argument("--grab-z-cm", type=float, default=0)
     parser.add_argument("--grab-home-x-cm", type=float, default=0.0)
     parser.add_argument("--grab-home-y-cm", type=float, default=6.0)
     parser.add_argument("--grab-home-z-cm", type=float, default=18.0)
