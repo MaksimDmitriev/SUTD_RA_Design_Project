@@ -56,7 +56,7 @@ class RoomObjectSorterTest(unittest.TestCase):
     def test_navigation_turn_calibration_and_sign(self):
         self.assertEqual((0.5, 0.47), navigation_turn_spec(RIGHT))
         self.assertEqual((-0.5, 0.47), navigation_turn_spec(LEFT))
-        self.assertEqual((0.5, 0.94), navigation_turn_spec(RIGHT, degrees=180))
+        self.assertEqual((0.5, 1.04), navigation_turn_spec(RIGHT, degrees=180))
 
     def test_remeasurement_does_not_substitute_a_different_label(self):
         trash = Detection((1, 2, 3, 4), 0.9, 1, "purple_trash")

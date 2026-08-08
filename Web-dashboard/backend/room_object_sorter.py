@@ -29,6 +29,7 @@ RIGHT = "right"
 SCAN_SECONDS = 2.0
 TURN_YAW_RATE = 0.5
 TURN_90_SECONDS = 0.47
+TURN_180_SECONDS = 1.04
 
 CAMERA_SERVO_ID = 6
 CAMERA_DIRECTION_PULSES = {
@@ -81,10 +82,12 @@ def navigation_turn_spec(direction: str, degrees: int = 90) -> tuple[float, floa
     else:
         raise ValueError("navigation turn direction must be 'left' or 'right'")
 
-    if degrees <= 0:
-        raise ValueError("navigation turn degrees must be greater than zero")
-
-    duration_seconds = TURN_90_SECONDS * degrees / 90.0
+    if degrees == 90:
+        duration_seconds = TURN_90_SECONDS
+    elif degrees == 180:
+        duration_seconds = TURN_180_SECONDS
+    else:
+        raise ValueError("navigation turns support only 90 or 180 degrees")
     return signed_yaw_rate, duration_seconds
 
 

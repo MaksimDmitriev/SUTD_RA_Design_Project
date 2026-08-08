@@ -765,7 +765,7 @@ The room workflow behaves as follows:
    left/front/right. After a useful-object drop, raise directly into the right
    scan pose and scan right/front/left.
 7. When front, left, and right are all empty, center the camera, turn the chassis
-   180 degrees for `0.94` seconds, and scan behind.
+   180 degrees for the separately calibrated `1.04` seconds, and scan behind.
 8. If the rear view is also empty, stop successfully. If it contains an object,
    sort it and continue the same cycle.
 
