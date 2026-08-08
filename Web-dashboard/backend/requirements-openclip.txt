@@ -1,7 +1,0 @@
-open_clip_torch
-timm
-ftfy
-regex
-tqdm
-huggingface-hub
-safetensors
