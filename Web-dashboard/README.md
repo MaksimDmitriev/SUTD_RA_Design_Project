@@ -36,6 +36,7 @@ Web-dashboard/
     camera.py
     measure_bottom_y_ratio.py
     object_visual_servo_test.py
+    room_object_sorter.py
     robot_constants.py
     requirements.txt
   frontend/
@@ -734,6 +735,44 @@ Expected behavior:
 - The latest annotated frame is written to `~/Web-dashboard/data/debug_detections/latest.jpg`.
 
 If the robot detects the object but drives past it, lower `--search-y-speed` and `--max-y-speed`, then increase `--x-deadband-ratio` slightly. Do not start gripper testing until the approach stop position is repeatable.
+
+### Robot: scan and sort the demo room
+
+`room_object_sorter.py` is the multi-object room workflow. It is separate from
+`object_visual_servo_test.py`, which remains the single-object forward-search
+test.
+
+Run this on the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python room_object_sorter.py
+```
+
+The room workflow behaves as follows:
+
+1. Stay stationary and scan front, left, and right for two seconds per view.
+2. Keep the elevated camera-home geometry while rotating only servo ID6:
+   front `1480`, left `2500`, and right `500`.
+3. If a side object is detected, return the camera to front while turning the
+   chassis 90 degrees toward it at `yaw_rate=0.5` for `0.47` seconds.
+4. Remeasure the same detector label from the forward camera before approaching.
+5. Use the calibrated floor-distance approach, arm alignment, pickup, and the
+   existing label-specific basket pose.
+6. After a trash drop, raise directly into the left scan pose and scan
+   left/front/right. After a useful-object drop, raise directly into the right
+   scan pose and scan right/front/left.
+7. When front, left, and right are all empty, center the camera, turn the chassis
+   180 degrees for `0.94` seconds, and scan behind.
+8. If the rear view is also empty, stop successfully. If it contains an object,
+   sort it and continue the same cycle.
+
+The large `0.5` navigation-turn yaw rate is separate from the slower `0.14`
+visual heading-correction rate. The script requires the default
+`floor-distance` approach mode. Use `Ctrl+C` to stop it immediately during a
+physical test.
 
 ### Robot: current floor-distance approach and grab sequence
 
