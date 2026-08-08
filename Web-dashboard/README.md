@@ -259,7 +259,7 @@ Run this on the robot if the camera stream is too bright or over-saturated:
 
 ```bash
 v4l2-ctl -d /dev/video0 \
-  --set-ctrl=brightness=-20,contrast=30,saturation=25,gamma=70,sharpness=8,backlight_compensation=0
+  --set-ctrl=brightness=-50,contrast=55,saturation=25,gamma=70,sharpness=8,backlight_compensation=0
 ```
 
 Open from your laptop while connected to the robot network:
@@ -747,6 +747,70 @@ For calibration history, the recorded intermediate pose was `ID1=500, ID3=600, I
 
 The temporary notes also recorded another test pose (`ID3=600, ID4=2000, ID5=1300, ID6=1600`) and a floor-looking pose (`ID3=800, ID4=2460, ID5=1529, ID6=1405`).
 
+To command the calibrated camera home pose directly, run:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from robot_ik import KinematicsArm
+
+arm = KinematicsArm()
+arm.set_servo_pulses(
+    [(1, 2500), (3, 1336), (4, 2460), (5, 1529), (6, 1480)],
+    duration_seconds=1.5,
+)
+
+print("Home pose set.")
+PY
+```
+
+The following manually recorded alternate pose is a test/calibration pose, not
+the camera home pose used by `object_visual_servo_test.py`:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from robot_ik import KinematicsArm
+
+arm = KinematicsArm()
+arm.set_servo_pulses(
+    [(1, 1700), (3, 600), (4, 600), (5, 2300), (6, 600)],
+    duration_seconds=1.5,
+)
+
+print("Other pose set.")
+PY
+```
+
+To test an explicit inverse-kinematics coordinate, replace `x`, `y`, and `z`
+with the required gripper target in centimetres:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+from robot_ik import ArmCoordinate, KinematicsArm
+
+x, y, z = 0.0, 15.0, 0.0
+
+arm = KinematicsArm()
+arm.move_to(
+    ArmCoordinate(x, y, z),
+    pitch=-90,
+    pitch_min=-90,
+    pitch_max=0,
+    move_time_ms=1000,
+)
+
+print(f"Gripper moved to ({x}, {y}, {z}) cm")
+PY
+```
+
 The intermediate pose was used because small requested changes—such as moving a PWM value from 500 to 520 or 530—sometimes produced no visible movement. The exact cause was not confirmed and could involve an internal control threshold, servo resolution, backlash, or static friction. Starting from a clearly different pose improved the repeatability of the final camera position.
 
 How one pulse value maps to the same joint angle:
@@ -813,6 +877,76 @@ The default floor-distance behavior is:
 - Add a `2.5 cm` overshoot to the final move so the target reaches the practical arm workspace.
 
 These values already have calibrated defaults, so the normal run does not need distance arguments. The corresponding CLI options remain available for deliberate testing and recalibration.
+
+#### Robot: calibrated 90-degree chassis turn
+
+The large navigation turn uses a faster yaw rate than the small visual-servo
+heading corrections. The measured starting calibration is `yaw_rate=0.5` for
+`0.47` seconds. Set `TURN_DIRECTION` to either `"clockwise"` or
+`"counterclockwise"` before running the test. Run this only with clear space
+around the robot:
+
+```bash
+cd ~/Web-dashboard/backend
+source .venv/bin/activate
+
+python - <<'PY'
+import time
+
+from robot_motion import create_motion_backend
+
+
+TURN_DIRECTION = "clockwise"
+TURN_YAW_RATE = 0.5
+TURN_90_SECONDS = 0.47
+
+
+def turn_90_degrees(motion, direction: str) -> None:
+    direction = direction.strip().lower()
+
+    if direction == "clockwise":
+        signed_yaw_rate = +TURN_YAW_RATE
+    elif direction == "counterclockwise":
+        signed_yaw_rate = -TURN_YAW_RATE
+    else:
+        raise ValueError(
+            "TURN_DIRECTION must be 'clockwise' or 'counterclockwise'"
+        )
+
+    print(
+        f"Turning approximately 90 degrees {direction}: "
+        f"yaw_rate={signed_yaw_rate}, duration={TURN_90_SECONDS}s"
+    )
+
+    try:
+        motion.rotate(signed_yaw_rate)
+        time.sleep(TURN_90_SECONDS)
+    finally:
+        motion.stop()
+
+
+def main() -> None:
+    motion = create_motion_backend(
+        mode="hiwonder",
+        speed=35,
+        direction=90,
+        debug=True,
+    )
+
+    motion.stop()
+    time.sleep(0.5)
+    turn_90_degrees(motion, TURN_DIRECTION)
+    print("Turn completed.")
+
+
+if __name__ == "__main__":
+    main()
+PY
+```
+
+This `0.5` yaw rate is intentionally separate from the `0.14` yaw rate used
+for small object-detection heading corrections, where slower movement reduces
+overshoot.
 
 #### Robot: left drift and the “move a bit” check
 
