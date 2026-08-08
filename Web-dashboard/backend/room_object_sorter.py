@@ -549,9 +549,10 @@ def main() -> int:
     music = None
 
     try:
-        music = create_music_player(arm)
-        music.start()
-        print("[room-sorter] Sera buzzer music started")
+        if args.music:
+            music = create_music_player(arm)
+            music.start()
+            print("[room-sorter] Sera buzzer music started")
 
         while True:
             found = scan_directions(

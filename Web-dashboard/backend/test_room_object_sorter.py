@@ -103,6 +103,7 @@ class RoomObjectSorterTest(unittest.TestCase):
             speed=35,
             direction=90,
             motion_debug=False,
+            music=True,
         )
         camera = Mock()
         motion = Mock(name="motion")
@@ -129,6 +130,12 @@ class RoomObjectSorterTest(unittest.TestCase):
         camera.close.assert_called_once_with()
         music.start.assert_called_once_with()
         music.stop_after_cycle.assert_called_once_with()
+
+    def test_music_cli_option_is_disabled_by_default(self):
+        with patch.object(sys, "argv", ["room_object_sorter.py"]):
+            args = sorter.visual_servo.parse_args()
+
+        self.assertFalse(args.music)
 
 
 if __name__ == "__main__":

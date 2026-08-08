@@ -110,6 +110,14 @@ def parse_args():
     )
     parser.add_argument("--motion-debug", action="store_true")
     parser.add_argument(
+        "--music",
+        action="store_true",
+        help=(
+            "Play looping buzzer music during room_object_sorter.py. "
+            "Disabled by default."
+        ),
+    )
+    parser.add_argument(
         "--target-x-ratio",
         type=float,
         default=0.50,
