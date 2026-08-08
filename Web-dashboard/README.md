@@ -778,18 +778,14 @@ cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
 python measure_bottom_y_ratio.py \
-  --model /home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model \
-  --conf 0.35 \
-  --labels red_useful,purple_trash \
-  --frames 5 \
-  --home-servo-pulses "1:2500,3:1336,4:2460,5:1529,6:1480" \
-  --home-servo-duration 1.5 \
-  --project-floor \
-  --camera-height-cm 19.6 \
-  --camera-pitch-down-deg 17.2 \
-  --camera-hfov-deg 79.1 \
   --debug-frame ~/Web-dashboard/data/debug_detections/floor_projection.jpg
 ```
+
+The model, confidence, accepted labels, five-frame sample count, arm home pose,
+home duration, and calibrated camera geometry are fixed in
+`backend/robot_constants.py` and shared with the visual-servo workflow.
+The script always projects each detection's bottom-center pixel onto the floor
+and reports the estimated robot-frame coordinates.
 
 Two recorded five-frame checks gave `bottom_y_ratio=0.4850` at 74 cm and `bottom_y_ratio=0.5246` at 64 cm from the front edge of the chassis. The closer object appearing lower in the frame is consistent with the floor-projection geometry.
 

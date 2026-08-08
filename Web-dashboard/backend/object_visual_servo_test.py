@@ -10,6 +10,7 @@ import cv2
 from camera import Camera
 from contrast_detector import ContrastBlobDetector
 from robot_ik import ArmCoordinate, KinematicsArm
+from robot_constants import RobotConstants
 from robot_motion import create_motion_backend
 from yolo_detector import Detection, YoloDetector, crop_detection
 from measure_bottom_y_ratio import project_pixel_to_floor
@@ -26,7 +27,7 @@ class TargetPrediction:
 HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
     # Measured from the MasterPi app after positioning the arm in the desired
     # camera-home pose. Keep ID1/gripper fully open at pulse 2500.
-    "my_home": [(1, 2500), (3, 1336), (4, 2460), (5, 1529), (6, 1480)],
+    "my_home": list(RobotConstants.HOME_SERVO_PULSES),
 }
 
 # Fixed settings for the robot's calibrated detection-and-pickup workflow.
@@ -34,20 +35,11 @@ HOME_SERVO_POSES: dict[str, list[tuple[int, int]]] = {
 # Detection stack and model deployed on the robot.
 DEFAULT_DETECTOR = "yolo"
 DEFAULT_CLASSIFICATION_MODE = "detector-label"
-DEFAULT_MODEL_PATH = "/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model"
-DEFAULT_APPROACH_LABELS = frozenset({"red_useful", "purple_trash"})
 # Calibrated chassis and arm behavior.
 DEFAULT_APPROACH_MODE = "floor-distance"
-DEFAULT_HOME_SERVO_DURATION_SECONDS = 1.5
 DEFAULT_DISTANCE_DRIVE_SPEED = 24.0
-# Fixed camera geometry measured in the repeatable my_home arm pose.
-DEFAULT_CAMERA_HEIGHT_CM = 19.6
-DEFAULT_CAMERA_PITCH_DOWN_DEG = 17.2
-DEFAULT_CAMERA_HORIZONTAL_FOV_DEG = 79.1
 # Maximum time allowed for the camera search and chassis approach loop.
 DEFAULT_MAX_RUN_SECONDS = 25.0
-# Minimum YOLO confidence accepted as a detection.
-DEFAULT_YOLO_CONFIDENCE = 0.35
 # Measured forward speed on the real floor when distance-drive speed is 24.
 CALIBRATED_DISTANCE_DRIVE_CM_PER_SECOND = 19.0
 # Consecutive detections required before the target is accepted.
@@ -65,13 +57,7 @@ POST_GRAB_WRIST_POSE: list[tuple[int, int]] = [(5, 1500)]
 POST_GRAB_TRASH_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 2500)]
 POST_GRAB_USEFUL_POSE: list[tuple[int, int]] = [(3, 500), (4, 2200), (6, 500)]
 POST_GRAB_GRIPPER_OPEN_PULSE = 2500
-POST_GRAB_HOME_POSE: list[tuple[int, int]] = [
-    (1, POST_GRAB_GRIPPER_OPEN_PULSE),
-    (3, 1336),
-    (4, 2460),
-    (5, 1529),
-    (6, 1480),
-]
+POST_GRAB_HOME_POSE: list[tuple[int, int]] = list(RobotConstants.HOME_SERVO_PULSES)
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -466,15 +452,15 @@ def parse_args():
     parser.add_argument("--camera-cy-px", type=float, default=None)
     parser.set_defaults(
         detector=DEFAULT_DETECTOR,
-        model=DEFAULT_MODEL_PATH,
+        model=RobotConstants.MODEL_PATH,
         approach_mode=DEFAULT_APPROACH_MODE,
-        home_servo_duration=DEFAULT_HOME_SERVO_DURATION_SECONDS,
+        home_servo_duration=RobotConstants.HOME_SERVO_DURATION_SECONDS,
         distance_drive_speed=DEFAULT_DISTANCE_DRIVE_SPEED,
-        camera_height_cm=DEFAULT_CAMERA_HEIGHT_CM,
-        camera_pitch_down_deg=DEFAULT_CAMERA_PITCH_DOWN_DEG,
-        camera_hfov_deg=DEFAULT_CAMERA_HORIZONTAL_FOV_DEG,
+        camera_height_cm=RobotConstants.CAMERA_HEIGHT_CM,
+        camera_pitch_down_deg=RobotConstants.CAMERA_PITCH_DOWN_DEG,
+        camera_hfov_deg=RobotConstants.CAMERA_HORIZONTAL_FOV_DEG,
         max_seconds=DEFAULT_MAX_RUN_SECONDS,
-        conf=DEFAULT_YOLO_CONFIDENCE,
+        conf=RobotConstants.YOLO_CONFIDENCE,
         distance_drive_cm_per_second=CALIBRATED_DISTANCE_DRIVE_CM_PER_SECOND,
         stable_frames=DEFAULT_STABLE_DETECTION_FRAMES,
         pickup_frames=DEFAULT_PICKUP_READY_FRAMES,
@@ -1043,7 +1029,7 @@ def finish_target(
 def main() -> int:
     args = parse_args()
     classification_mode = DEFAULT_CLASSIFICATION_MODE
-    approach_labels = set(DEFAULT_APPROACH_LABELS)
+    approach_labels = set(RobotConstants.APPROACH_LABELS)
 
     arm = create_arm(args)
     if args.home_pose != "ik":

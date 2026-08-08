@@ -4,6 +4,7 @@ from datetime import datetime
 
 from camera import Camera
 from clip_classifier import ClipClassifier
+from robot_constants import RobotConstants
 from robot_motion import create_motion_backend
 from robot_sonar import SonarDistanceSensor
 from yolo_detector import YoloDetector, crop_detection
@@ -15,7 +16,7 @@ def parse_args():
     )
     parser.add_argument(
         "--model",
-        default="/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model",
+        default=RobotConstants.MODEL_PATH,
         help="Path to the YOLO NCNN model directory on the robot.",
     )
     parser.add_argument("--conf", type=float, default=0.25)

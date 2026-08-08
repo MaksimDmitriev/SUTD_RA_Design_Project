@@ -3,6 +3,8 @@ from pathlib import Path
 
 import numpy as np
 
+from robot_constants import RobotConstants
+
 
 @dataclass
 class Detection:
@@ -15,7 +17,7 @@ class Detection:
 class YoloDetector:
     def __init__(
         self,
-        model_path: str | Path = "/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model",
+        model_path: str | Path = RobotConstants.MODEL_PATH,
         confidence: float = 0.25,
         image_size: int = 640,
     ):

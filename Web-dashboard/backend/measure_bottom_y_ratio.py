@@ -8,59 +8,18 @@ import cv2
 
 from camera import Camera
 from robot_ik import KinematicsArm
+from robot_constants import RobotConstants
 from yolo_detector import Detection, YoloDetector
-
-
-def parse_servo_pulses(value: str) -> list[tuple[int, int]]:
-    positions = []
-    for item in value.split(","):
-        item = item.strip()
-        if not item:
-            continue
-        try:
-            servo_id_raw, pulse_raw = item.split(":", 1)
-            servo_id = int(servo_id_raw)
-            pulse = int(pulse_raw)
-        except ValueError as exc:
-            raise argparse.ArgumentTypeError(
-                "servo pulses must use servo_id:pulse pairs, for example "
-                "3:1336,4:2460,5:1529,6:1480"
-            ) from exc
-        if servo_id < 1 or servo_id > 6:
-            raise argparse.ArgumentTypeError("servo_id must be between 1 and 6")
-        if pulse < 500 or pulse > 2500:
-            raise argparse.ArgumentTypeError("pulse must be between 500 and 2500")
-        positions.append((servo_id, pulse))
-    if not positions:
-        raise argparse.ArgumentTypeError("at least one servo_id:pulse pair is required")
-    return positions
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Detect an object and print the YOLO box bottom_y_ratio for "
-            "camera-distance calibration."
+            "Detect an object, project its bottom-center pixel onto the floor, "
+            "and print estimated robot-frame coordinates."
         )
     )
-    parser.add_argument(
-        "--model",
-        default="/home/pi/Web-dashboard/models/detector/sortibot_yolo_ncnn_model",
-        help="Path to the custom YOLO model directory on the robot.",
-    )
-    parser.add_argument("--conf", type=float, default=0.35)
     parser.add_argument("--imgsz", type=int, default=640)
-    parser.add_argument(
-        "--labels",
-        default="red_useful,purple_trash",
-        help="Comma-separated labels to accept. Empty means any label.",
-    )
-    parser.add_argument(
-        "--frames",
-        type=int,
-        default=5,
-        help="Number of successful detections to average.",
-    )
     parser.add_argument(
         "--max-frame-tries",
         type=int,
@@ -74,42 +33,9 @@ def parse_args():
         help="Delay between camera reads.",
     )
     parser.add_argument(
-        "--home-servo-pulses",
-        type=parse_servo_pulses,
-        default=None,
-        help=(
-            "Optional comma-separated servo_id:pulse camera pose, for example "
-            "3:1336,4:2460,5:1529,6:1480."
-        ),
-    )
-    parser.add_argument("--home-servo-duration", type=float, default=1.5)
-    parser.add_argument(
         "--debug-frame",
         default=None,
         help="Optional path for an annotated frame, for example /tmp/bottom_ratio.jpg.",
-    )
-    parser.add_argument(
-        "--project-floor",
-        action="store_true",
-        help=(
-            "Project the YOLO box bottom-center pixel onto the floor plane and "
-            "print estimated robot-frame x/y coordinates."
-        ),
-    )
-    parser.add_argument(
-        "--camera-height-cm",
-        type=float,
-        default=None,
-        help="Camera optical-center height above the floor in cm.",
-    )
-    parser.add_argument(
-        "--camera-pitch-down-deg",
-        type=float,
-        default=None,
-        help=(
-            "Camera optical-axis downward tilt from horizontal in degrees. "
-            "0 means looking straight forward, 90 means looking straight down."
-        ),
     )
     parser.add_argument(
         "--camera-forward-offset-cm",
@@ -130,21 +56,12 @@ def parse_args():
         help="Optional camera yaw correction in degrees. Positive rotates right.",
     )
     parser.add_argument(
-        "--camera-hfov-deg",
-        type=float,
-        default=62.0,
-        help=(
-            "Horizontal field of view used to estimate focal length when "
-            "--camera-fx-px is not provided."
-        ),
-    )
-    parser.add_argument(
         "--camera-vfov-deg",
         type=float,
         default=None,
         help=(
             "Vertical field of view used to estimate focal length. If omitted, "
-            "it is derived from --camera-hfov-deg and frame aspect ratio."
+            "it is derived from the fixed horizontal field of view and frame aspect ratio."
         ),
     )
     parser.add_argument("--camera-fx-px", type=float, default=None)
@@ -156,15 +73,7 @@ def parse_args():
         action="store_true",
         help="Print one JSON object instead of human-readable lines.",
     )
-    args = parser.parse_args()
-    if args.project_floor and (
-        args.camera_height_cm is None or args.camera_pitch_down_deg is None
-    ):
-        parser.error(
-            "--project-floor requires --camera-height-cm and "
-            "--camera-pitch-down-deg"
-        )
-    return args
+    return parser.parse_args()
 
 
 def choose_detection(
@@ -200,8 +109,6 @@ def detection_measurement(frame, detection: Detection) -> dict:
 
 
 def add_floor_projection(args, measurement: dict) -> None:
-    if not args.project_floor:
-        return
     x1, _y1, x2, y2 = measurement["xyxy"]
     bottom_center_x = (x1 + x2) / 2.0
     projection = project_pixel_to_floor(
@@ -225,14 +132,17 @@ def camera_intrinsics_from_args(args, width: int, height: int) -> tuple[float, f
     if args.camera_fx_px is not None:
         fx = args.camera_fx_px
     else:
-        hfov = math.radians(args.camera_hfov_deg)
+        hfov = math.radians(RobotConstants.CAMERA_HORIZONTAL_FOV_DEG)
         fx = width / (2.0 * math.tan(hfov / 2.0))
 
     if args.camera_fy_px is not None:
         fy = args.camera_fy_px
     else:
         if args.camera_vfov_deg is None:
-            vfov = 2.0 * math.atan(math.tan(math.radians(args.camera_hfov_deg) / 2.0) * (height / width))
+            vfov = 2.0 * math.atan(
+                math.tan(math.radians(RobotConstants.CAMERA_HORIZONTAL_FOV_DEG) / 2.0)
+                * (height / width)
+            )
         else:
             vfov = math.radians(args.camera_vfov_deg)
         fy = height / (2.0 * math.tan(vfov / 2.0))
@@ -261,12 +171,6 @@ def project_pixel_to_floor(
     width: int,
     height: int,
 ) -> dict | None:
-    if args.camera_height_cm is None or args.camera_pitch_down_deg is None:
-        raise ValueError(
-            "--project-floor requires --camera-height-cm and "
-            "--camera-pitch-down-deg"
-        )
-
     fx, fy, cx, cy = camera_intrinsics_from_args(args, width, height)
 
     # Camera coordinates follow OpenCV convention: x right, y down, z forward.
@@ -274,7 +178,7 @@ def project_pixel_to_floor(
     ray_cam_y = (v - cy) / fy
     ray_cam_z = 1.0
 
-    pitch = math.radians(args.camera_pitch_down_deg)
+    pitch = math.radians(RobotConstants.CAMERA_PITCH_DOWN_DEG)
 
     # Robot coordinates: x right, y forward, z up.
     # With zero pitch, camera z points forward and camera y points down.
@@ -289,7 +193,7 @@ def project_pixel_to_floor(
     if ray_robot_z >= -1e-6:
         return None
 
-    scale = args.camera_height_cm / -ray_robot_z
+    scale = RobotConstants.CAMERA_HEIGHT_CM / -ray_robot_z
     floor_x = args.camera_right_offset_cm + scale * ray_robot_x
     floor_y = args.camera_forward_offset_cm + scale * ray_robot_y
     floor_distance = math.hypot(floor_x, floor_y)
@@ -298,8 +202,8 @@ def project_pixel_to_floor(
         "floor_x_cm": floor_x,
         "floor_y_cm": floor_y,
         "floor_distance_cm": floor_distance,
-        "camera_height_cm": args.camera_height_cm,
-        "camera_pitch_down_deg": args.camera_pitch_down_deg,
+        "camera_height_cm": RobotConstants.CAMERA_HEIGHT_CM,
+        "camera_pitch_down_deg": RobotConstants.CAMERA_PITCH_DOWN_DEG,
         "camera_forward_offset_cm": args.camera_forward_offset_cm,
         "camera_right_offset_cm": args.camera_right_offset_cm,
         "camera_yaw_deg": args.camera_yaw_deg,
@@ -396,23 +300,22 @@ def average_measurements(measurements: list[dict]) -> dict:
 
 def main() -> int:
     args = parse_args()
-    allowed_labels = {
-        label.strip().lower()
-        for label in args.labels.split(",")
-        if label.strip()
-    }
+    allowed_labels = set(RobotConstants.APPROACH_LABELS)
 
-    if args.home_servo_pulses is not None:
-        arm = KinematicsArm()
-        if not args.json:
-            print(f"homing arm with servo pulses: {args.home_servo_pulses}")
-        arm.set_servo_pulses(
-            args.home_servo_pulses,
-            duration_seconds=args.home_servo_duration,
-        )
+    arm = KinematicsArm()
+    if not args.json:
+        print(f"homing arm with servo pulses: {RobotConstants.HOME_SERVO_PULSES}")
+    arm.set_servo_pulses(
+        list(RobotConstants.HOME_SERVO_PULSES),
+        duration_seconds=RobotConstants.HOME_SERVO_DURATION_SECONDS,
+    )
 
     camera = Camera()
-    detector = YoloDetector(args.model, confidence=args.conf, image_size=args.imgsz)
+    detector = YoloDetector(
+        RobotConstants.MODEL_PATH,
+        confidence=RobotConstants.YOLO_CONFIDENCE,
+        image_size=args.imgsz,
+    )
     detector.load()
 
     measurements = []
@@ -445,10 +348,10 @@ def main() -> int:
                         f" floor_y_cm={measurement['floor_y_cm']:.2f}"
                         f" floor_distance_cm={measurement['floor_distance_cm']:.2f}"
                     )
-                elif args.project_floor:
+                else:
                     line += " floor_projection=not_intersecting_floor"
                 print(line)
-            if len(measurements) >= max(1, args.frames):
+            if len(measurements) >= RobotConstants.MEASUREMENT_FRAMES:
                 break
             time.sleep(args.poll_seconds)
     finally:
@@ -456,8 +359,8 @@ def main() -> int:
 
     if not measurements:
         message = (
-            "No accepted object detection found. Check --labels, --conf, model path, "
-            "camera pose, and object visibility."
+            "No accepted object detection found. Check the fixed labels, confidence, "
+            "model path, camera pose, and object visibility."
         )
         if args.json:
             print(json.dumps({"ok": False, "error": message}))
@@ -487,7 +390,7 @@ def main() -> int:
             print(f"floor_x_cm={result['floor_x_cm']:.2f}")
             print(f"floor_y_cm={result['floor_y_cm']:.2f}")
             print(f"floor_distance_cm={result['floor_distance_cm']:.2f}")
-        elif args.project_floor:
+        else:
             print("floor_projection=not_intersecting_floor")
 
     return 0
