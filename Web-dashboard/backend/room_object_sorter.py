@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from camera import Camera
 from contrast_detector import ContrastBlobDetector
 from robot_constants import RobotConstants
+from robot_buzzer import LoopingTunePlayer, SERA_BPM, SERA_LONG_SAMPLE
 from robot_ik import ArmCoordinate, KinematicsArm
 from robot_motion import create_motion_backend
 from yolo_detector import Detection, YoloDetector
@@ -255,6 +256,15 @@ def create_detector(args):
         )
     detector.load()
     return detector
+
+
+def create_music_player(arm: KinematicsArm) -> LoopingTunePlayer:
+    """Use the arm's existing board connection for concurrent buzzer music."""
+    return LoopingTunePlayer(
+        arm.controller_board,
+        SERA_LONG_SAMPLE,
+        bpm=SERA_BPM,
+    )
 
 
 def release_into_basket_and_prepare_scan(
@@ -536,8 +546,13 @@ def main() -> int:
 
     scan_order = INITIAL_SCAN_ORDER
     sorted_count = 0
+    music = None
 
     try:
+        music = create_music_player(arm)
+        music.start()
+        print("[room-sorter] Sera buzzer music started")
+
         while True:
             found = scan_directions(
                 args,
@@ -629,6 +644,12 @@ def main() -> int:
     finally:
         motion.stop()
         camera.close()
+        if music is not None:
+            print("[room-sorter] waiting for the current music cycle to finish")
+            try:
+                music.stop_after_cycle()
+            except RuntimeError as exc:
+                print(f"[room-sorter] buzzer shutdown warning: {exc}")
 
 
 if __name__ == "__main__":

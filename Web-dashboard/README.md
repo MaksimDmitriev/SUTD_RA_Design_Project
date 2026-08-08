@@ -768,11 +768,15 @@ The room workflow behaves as follows:
    180 degrees for the separately calibrated `1.04` seconds, and scan behind.
 8. If the rear view is also empty, stop successfully. If it contains an object,
    sort it and continue the same cycle.
+9. Play the long `Sera` buzzer arrangement continuously while the workflow is
+   active. On completion or shutdown, stop the robot immediately and let the
+   current music cycle finish without starting another one.
 
 The large `0.5` navigation-turn yaw rate is separate from the slower `0.14`
 visual heading-correction rate. The script requires the default
-`floor-distance` approach mode. Use `Ctrl+C` to stop it immediately during a
-physical test.
+`floor-distance` approach mode. Use `Ctrl+C` to stop the robot immediately
+during a physical test. The process may remain open briefly while the active
+music cycle finishes.
 
 ### Robot: current floor-distance approach and grab sequence
 

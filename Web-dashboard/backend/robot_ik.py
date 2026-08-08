@@ -31,6 +31,12 @@ class KinematicsArm:
         self._ik = None
         self._transform = None
 
+    @property
+    def controller_board(self):
+        """Return the loaded board so peripherals can share its connection."""
+        self.load()
+        return self._board
+
     def _add_masterpi_paths(self) -> None:
         default_paths = [
             "/home/pi/MasterPi",

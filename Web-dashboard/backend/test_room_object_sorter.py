@@ -13,6 +13,13 @@ except ModuleNotFoundError:
     cv2_stub.VideoCapture = object
     sys.modules["cv2"] = cv2_stub
 
+try:
+    import numpy  # noqa: F401
+except ModuleNotFoundError:
+    numpy_stub = types.ModuleType("numpy")
+    numpy_stub.ndarray = object
+    sys.modules["numpy"] = numpy_stub
+
 from robot_constants import RobotConstants
 import room_object_sorter as sorter
 from room_object_sorter import (
@@ -99,6 +106,7 @@ class RoomObjectSorterTest(unittest.TestCase):
         )
         camera = Mock()
         motion = Mock(name="motion")
+        music = Mock(name="music")
 
         with (
             patch.object(sorter.visual_servo, "parse_args", return_value=args),
@@ -107,6 +115,7 @@ class RoomObjectSorterTest(unittest.TestCase):
             patch.object(sorter, "Camera", return_value=camera),
             patch.object(sorter, "create_detector", return_value=Mock()),
             patch.object(sorter, "create_motion_backend", return_value=motion),
+            patch.object(sorter, "create_music_player", return_value=music),
             patch.object(sorter, "scan_directions", return_value=None),
             patch.object(sorter, "center_camera_while_turning") as turn,
             patch.object(sorter, "observe_view", return_value=None),
@@ -118,6 +127,8 @@ class RoomObjectSorterTest(unittest.TestCase):
         self.assertEqual(180, turn.call_args.kwargs["degrees"])
         motion.stop.assert_called()
         camera.close.assert_called_once_with()
+        music.start.assert_called_once_with()
+        music.stop_after_cycle.assert_called_once_with()
 
 
 if __name__ == "__main__":
