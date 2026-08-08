@@ -34,7 +34,9 @@ Web-dashboard/
   backend/
     app.py
     camera.py
+    measure_bottom_y_ratio.py
     object_visual_servo_test.py
+    robot_constants.py
     requirements.txt
   frontend/
     package.json
@@ -721,10 +723,7 @@ Run this on the robot first with `--motion dry-run` if you only want to verify d
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
-python object_visual_servo_test.py \
-  --distance-reliable-cm 30.0 \
-  --distance-far-step-fraction 0.5 \
-  --distance-max-step-cm 25.0
+python object_visual_servo_test.py
 ```
 
 Expected behavior:
@@ -801,19 +800,19 @@ After closing the gripper, the script lifts the object, moves to a release pose,
 cd ~/Web-dashboard/backend
 source .venv/bin/activate
 
-python object_visual_servo_test.py \
-  --distance-reliable-cm 30.0 \
-  --distance-far-step-fraction 0.5 \
-  --distance-max-step-cm 25.0
+python object_visual_servo_test.py
 ```
 
 Before every run, the script moves the arm to the fixed `my_home` pose and keeps the gripper open at pulse 2500. The floor projection then uses that pose's calibrated camera geometry: optical-center height `19.6 cm`, downward pitch `17.2°`, and horizontal field of view `79.1°`.
 
-The remaining command arguments are:
+The default floor-distance behavior is:
 
-- `--distance-reliable-cm 30.0`: at or below this projected forward distance, trust the measurement for the final approach move. Farther away, the robot moves only partway and measures again.
-- `--distance-far-step-fraction 0.5`: when the object is outside the reliable range, drive half of the projected forward distance before stopping and remeasuring.
-- `--distance-max-step-cm 25.0`: cap any single forward movement at 25 cm so a bad projection cannot command one long drive.
+- At or below `30.0 cm`, trust the projected forward distance for the final approach move. Farther away, move only partway and measure again.
+- Outside the reliable range, drive `0.5` of the projected forward distance before stopping and remeasuring.
+- Cap each far partial movement at `25.0 cm` so a bad projection cannot command one long drive.
+- Add a `2.5 cm` overshoot to the final move so the target reaches the practical arm workspace.
+
+These values already have calibrated defaults, so the normal run does not need distance arguments. The corresponding CLI options remain available for deliberate testing and recalibration.
 
 #### Robot: left drift and the “move a bit” check
 
