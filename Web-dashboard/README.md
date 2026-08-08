@@ -302,7 +302,7 @@ mkdir -p $HOME/Desktop/sortibot_debug_detections
 rsync -av \
   -e "ssh -i $HOME/.ssh/sortibot_ed25519" \
   pi@192.168.149.1:~/Web-dashboard/data/debug_detections/ \
-  $HOME/Desktop/sortibot_debug_detections/
+  $HOME/Downloads/sortibot_debug_detections/
 ```
 
 ## Development mode
