@@ -53,6 +53,22 @@ class RoomObjectSorterTest(unittest.TestCase):
             scan_order_after_sort("red_useful"),
         )
 
+    def test_post_grab_poses_hold_id4_at_safe_basket_height(self):
+        preparation_pose = dict(sorter.visual_servo.POST_GRAB_WRIST_POSE)
+        self.assertEqual(1500, preparation_pose[4])
+        self.assertEqual(1500, preparation_pose[5])
+
+        for label, expected_id6 in (
+            ("purple_trash", 2500),
+            ("red_useful", 500),
+        ):
+            drop_pose = dict(
+                sorter.visual_servo.post_grab_pose_for_label(label)
+            )
+            self.assertEqual(500, drop_pose[3])
+            self.assertEqual(1500, drop_pose[4])
+            self.assertEqual(expected_id6, drop_pose[6])
+
     def test_navigation_turn_calibration_and_sign(self):
         self.assertEqual((0.5, 0.47), navigation_turn_spec(RIGHT))
         self.assertEqual((-0.5, 0.47), navigation_turn_spec(LEFT))

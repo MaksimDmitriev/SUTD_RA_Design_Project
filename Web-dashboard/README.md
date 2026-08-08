@@ -895,8 +895,8 @@ The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values are the starting arm 
 
 After closing the gripper, the script lifts the object, moves to a release pose, opens the gripper, then returns to the raw camera home pose. The release pose depends on the detector label:
 
-- `purple_trash`: first set `ID5=1500`, then set `ID3=500, ID4=2200, ID6=2500`.
-- `red_useful`: first set `ID5=1500`, then set `ID3=500, ID4=2200, ID6=500`.
+- `purple_trash`: first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=2500`.
+- `red_useful`: first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=500`.
 - After release: set `ID1=2500, ID3=1336, ID4=2460, ID5=1529, ID6=1480`.
 
 ```bash
