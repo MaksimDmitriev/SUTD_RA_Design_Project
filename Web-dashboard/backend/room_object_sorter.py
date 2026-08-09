@@ -258,6 +258,21 @@ def create_detector(args):
     return detector
 
 
+def prime_perception(camera: Camera, detector) -> None:
+    """Finish lazy camera/model startup before a timed room scan begins.
+
+    Loading an Ultralytics NCNN model is partly lazy: the first prediction can
+    spend several seconds constructing the inference backend even after
+    ``detector.load()`` has returned.  Charging that one-time cost to the
+    two-second front scan leaves time for only one detection, which can never
+    satisfy the default two-frame stability requirement.
+    """
+    print("[room-sorter] priming camera and detector")
+    frame = camera.read()
+    detector.detect(frame)
+    print("[room-sorter] camera and detector ready")
+
+
 def create_music_player(arm: KinematicsArm) -> LoopingTunePlayer:
     """Use the arm's existing board connection for concurrent buzzer music."""
     return LoopingTunePlayer(
@@ -549,6 +564,8 @@ def main() -> int:
     music = None
 
     try:
+        prime_perception(camera, detector)
+
         if args.music:
             music = create_music_player(arm)
             music.start()

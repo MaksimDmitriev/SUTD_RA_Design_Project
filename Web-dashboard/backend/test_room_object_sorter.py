@@ -81,6 +81,17 @@ class RoomObjectSorterTest(unittest.TestCase):
         self.assertEqual((-0.5, 0.47), navigation_turn_spec(LEFT))
         self.assertEqual((0.5, 1.04), navigation_turn_spec(RIGHT, degrees=180))
 
+    def test_prime_perception_runs_a_prediction_on_a_camera_frame(self):
+        frame = object()
+        camera = Mock()
+        camera.read.return_value = frame
+        detector = Mock()
+
+        sorter.prime_perception(camera, detector)
+
+        camera.read.assert_called_once_with()
+        detector.detect.assert_called_once_with(frame)
+
     def test_remeasurement_does_not_substitute_a_different_label(self):
         trash = Detection((1, 2, 3, 4), 0.9, 1, "purple_trash")
         useful = Detection((5, 6, 7, 8), 0.8, 0, "red_useful")
@@ -115,6 +126,7 @@ class RoomObjectSorterTest(unittest.TestCase):
             patch.object(sorter, "move_camera_to"),
             patch.object(sorter, "Camera", return_value=camera),
             patch.object(sorter, "create_detector", return_value=Mock()),
+            patch.object(sorter, "prime_perception") as prime_perception,
             patch.object(sorter, "create_motion_backend", return_value=motion),
             patch.object(sorter, "create_music_player", return_value=music),
             patch.object(sorter, "scan_directions", return_value=None),
@@ -124,6 +136,7 @@ class RoomObjectSorterTest(unittest.TestCase):
             self.assertEqual(0, sorter.main())
 
         turn.assert_called_once()
+        prime_perception.assert_called_once()
         self.assertEqual(RIGHT, turn.call_args.args[3])
         self.assertEqual(180, turn.call_args.kwargs["degrees"])
         motion.stop.assert_called()
