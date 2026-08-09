@@ -12,6 +12,10 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import heroImage from "./assets/gripper-extension-oblique.jpg";
+import roomTrialImage from "./assets/sortibot-room-trial.jpg";
+
+const FIELD_TRIALS_URL =
+  "https://drive.google.com/drive/folders/1aTqLLz3d6wR7lSvsIrgBU444h8DdISaR";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "";
 
@@ -235,6 +239,40 @@ function ProjectPage() {
               Mac made iteration practical, and the same workflow can add more labelled
               object classes later.
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="project-section" aria-labelledby="field-trials-title">
+        <div className="section-heading">
+          <p className="section-kicker">Field trials</p>
+          <h2 id="field-trials-title">Recovery is part of the cleaning loop.</h2>
+        </div>
+        <div className="field-trial">
+          <img
+            src={roomTrialImage}
+            alt="SortiBot in a multi-object floor trial with its custom gripper and collection basket"
+          />
+          <div className="field-trial-copy">
+            <p>
+              Long-form tests include imperfect interactions, such as a missed pickup or
+              an object being knocked over. The robot does not treat one unsuccessful
+              attempt as the end of the run: it resumes scanning, selects a remaining
+              target, and continues the cleaning cycle.
+            </p>
+            <p>
+              The recordings are qualitative evidence of this scan–act–rescan behaviour
+              and eventual surface clearing. They are not a measured grasp-success rate.
+            </p>
+            <a
+              className="text-link"
+              href={FIELD_TRIALS_URL}
+              rel="noreferrer"
+              target="_blank"
+            >
+              View full test recordings
+              <ArrowRight size={16} />
+            </a>
           </div>
         </div>
       </section>
