@@ -29,6 +29,7 @@ from room_object_sorter import (
     accepted_detection,
     camera_scan_pose,
     navigation_turn_spec,
+    rejected_detection_message,
     scan_order_after_sort,
 )
 from yolo_detector import Detection
@@ -104,6 +105,34 @@ class RoomObjectSorterTest(unittest.TestCase):
         self.assertIsNone(
             accepted_detection([useful], labels, "purple_trash")
         )
+
+    def test_rejected_detection_message_prefers_tracked_label(self):
+        detector = SimpleNamespace(
+            confidence=0.35,
+            diagnostic_confidence=0.05,
+            last_rejected_detections=[
+                Detection((1, 2, 3, 4), 0.34, 1, "purple_trash"),
+                Detection((5, 6, 7, 8), 0.27, 0, "red_useful"),
+            ],
+        )
+
+        message = rejected_detection_message(detector, "red_useful")
+
+        self.assertIn("rejected confidence=0.270", message)
+        self.assertIn("threshold=0.350", message)
+        self.assertIn("box=(5, 6, 7, 8)", message)
+
+    def test_rejected_detection_message_reports_no_candidate(self):
+        detector = SimpleNamespace(
+            confidence=0.35,
+            diagnostic_confidence=0.05,
+            last_rejected_detections=[],
+        )
+
+        message = rejected_detection_message(detector, "red_useful")
+
+        self.assertIn("no YOLO candidate", message)
+        self.assertIn("confidence=0.050", message)
 
     def test_main_stops_after_empty_front_left_right_and_rear(self):
         args = SimpleNamespace(

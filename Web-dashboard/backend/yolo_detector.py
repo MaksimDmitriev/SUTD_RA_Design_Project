@@ -20,10 +20,13 @@ class YoloDetector:
         model_path: str | Path = RobotConstants.MODEL_PATH,
         confidence: float = 0.25,
         image_size: int = 640,
+        diagnostic_confidence: float = 0.05,
     ):
         self.model_path = str(model_path)
         self.confidence = confidence
         self.image_size = image_size
+        self.diagnostic_confidence = min(diagnostic_confidence, confidence)
+        self.last_rejected_detections: list[Detection] = []
         self._model = None
 
     def load(self) -> None:
@@ -39,11 +42,13 @@ class YoloDetector:
         result = self._model.predict(
             frame_bgr,
             imgsz=self.image_size,
-            conf=self.confidence,
+            # Keep low-confidence boxes long enough to explain why a visible
+            # object was rejected. They are filtered out before returning.
+            conf=self.diagnostic_confidence,
             verbose=False,
         )[0]
 
-        detections: list[Detection] = []
+        candidates: list[Detection] = []
         names = result.names or {}
         height, width = frame_bgr.shape[:2]
 
@@ -57,7 +62,7 @@ class YoloDetector:
             y2 = max(0, min(height, y2))
             if x2 <= x1 or y2 <= y1:
                 continue
-            detections.append(
+            candidates.append(
                 Detection(
                     xyxy=(x1, y1, x2, y2),
                     confidence=confidence,
@@ -66,8 +71,11 @@ class YoloDetector:
                 )
             )
 
-        detections.sort(key=lambda item: item.confidence, reverse=True)
-        return detections
+        candidates.sort(key=lambda item: item.confidence, reverse=True)
+        self.last_rejected_detections = [
+            item for item in candidates if item.confidence < self.confidence
+        ]
+        return [item for item in candidates if item.confidence >= self.confidence]
 
 
 def crop_detection(

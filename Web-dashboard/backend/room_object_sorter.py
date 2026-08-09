@@ -143,6 +143,41 @@ def accepted_detection(
     return None
 
 
+def rejected_detection_message(detector, target_label: str) -> str:
+    """Explain the strongest below-threshold YOLO candidate, when available."""
+    rejected = getattr(detector, "last_rejected_detections", ())
+    target_candidates = [
+        detection
+        for detection in rejected
+        if detection.label.lower() == target_label.lower()
+    ]
+    if target_candidates:
+        best = max(target_candidates, key=lambda item: item.confidence)
+        threshold = getattr(detector, "confidence", None)
+        threshold_text = (
+            f" threshold={threshold:.3f}" if threshold is not None else ""
+        )
+        return (
+            f"rejected confidence={best.confidence:.3f}{threshold_text} "
+            f"box={best.xyxy}"
+        )
+
+    if rejected:
+        best = max(rejected, key=lambda item: item.confidence)
+        return (
+            f"not visible; best rejected label={best.label} "
+            f"confidence={best.confidence:.3f} box={best.xyxy}"
+        )
+
+    diagnostic_threshold = getattr(detector, "diagnostic_confidence", None)
+    if diagnostic_threshold is not None:
+        return (
+            "not visible; no YOLO candidate at or above diagnostic "
+            f"confidence={diagnostic_threshold:.3f}"
+        )
+    return "not visible"
+
+
 def observe_view(
     args,
     camera: Camera,
@@ -438,7 +473,8 @@ def approach_and_sort(
         if detection is None or detection.label.lower() != target_label.lower():
             stable_count = 0
             motion.stop()
-            print(f"[room-sorter] remeasuring: {target_label} not visible")
+            rejection = rejected_detection_message(detector, target_label)
+            print(f"[room-sorter] remeasuring: {target_label} {rejection}")
             time.sleep(args.poll_seconds)
             continue
 
