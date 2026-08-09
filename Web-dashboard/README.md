@@ -768,9 +768,9 @@ The room workflow behaves as follows:
 4. Remeasure the same detector label from the forward camera before approaching.
 5. Use the calibrated floor-distance approach, arm alignment, pickup, and the
    existing label-specific basket pose.
-6. After a trash drop, raise directly into the left scan pose and scan
-   left/front/right. After a useful-object drop, raise directly into the right
-   scan pose and scan right/front/left.
+6. After a trash drop, raise directly into the right scan pose and scan
+   right/front/left. After a useful-object drop, raise directly into the left
+   scan pose and scan left/front/right.
 7. When front, left, and right are all empty, center the camera, turn the chassis
    180 degrees for the separately calibrated `1.04` seconds, and scan behind.
 8. If the rear view is also empty, stop successfully. If it contains an object,
@@ -907,8 +907,8 @@ The `--grab-x-cm`, `--grab-y-cm`, and `--grab-z-cm` values are the starting arm 
 
 After closing the gripper, the script lifts the object, moves to a release pose, opens the gripper, then returns to the raw camera home pose. The release pose depends on the detector label:
 
-- `purple_trash`: first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=2500`.
-- `red_useful`: first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=500`.
+- `purple_trash` (right): first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=500`.
+- `red_useful` (left): first set `ID4=1500, ID5=1500`, then keep `ID4=1500` while setting `ID3=500, ID6=2500`.
 - After release: set `ID1=2500, ID3=1336, ID4=2460, ID5=1529, ID6=1480`.
 
 ```bash

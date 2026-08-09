@@ -52,11 +52,11 @@ class RoomObjectSorterTest(unittest.TestCase):
 
     def test_scan_starts_on_the_basket_side(self):
         self.assertEqual(
-            (LEFT, FRONT, RIGHT),
+            (RIGHT, FRONT, LEFT),
             scan_order_after_sort("purple_trash"),
         )
         self.assertEqual(
-            (RIGHT, FRONT, LEFT),
+            (LEFT, FRONT, RIGHT),
             scan_order_after_sort("red_useful"),
         )
 
@@ -66,8 +66,8 @@ class RoomObjectSorterTest(unittest.TestCase):
         self.assertEqual(1500, preparation_pose[5])
 
         for label, expected_id6 in (
-            ("purple_trash", 2500),
-            ("red_useful", 500),
+            ("purple_trash", 500),
+            ("red_useful", 2500),
         ):
             drop_pose = dict(
                 sorter.visual_servo.post_grab_pose_for_label(label)

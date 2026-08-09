@@ -66,7 +66,7 @@ def camera_scan_pose(direction: str) -> list[tuple[int, int]]:
 
 
 def basket_side_for_label(label: str) -> str:
-    return LEFT if "trash" in label.lower() else RIGHT
+    return RIGHT if "trash" in label.lower() else LEFT
 
 
 def scan_order_after_sort(label: str) -> tuple[str, str, str]:

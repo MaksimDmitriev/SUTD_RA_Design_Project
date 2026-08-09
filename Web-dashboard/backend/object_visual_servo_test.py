@@ -57,8 +57,8 @@ FLOOR_DISTANCE_FINAL_OVERSHOOT_CM = 2.5
 # Keeping this separate from the ID6 rotation prevents the end effector from
 # dipping into the basket while both servos interpolate to the drop pose.
 POST_GRAB_WRIST_POSE: list[tuple[int, int]] = [(4, 1500), (5, 1500)]
-POST_GRAB_TRASH_POSE: list[tuple[int, int]] = [(3, 500), (4, 1500), (6, 2500)]
-POST_GRAB_USEFUL_POSE: list[tuple[int, int]] = [(3, 500), (4, 1500), (6, 500)]
+POST_GRAB_TRASH_POSE: list[tuple[int, int]] = [(3, 500), (4, 1500), (6, 500)]
+POST_GRAB_USEFUL_POSE: list[tuple[int, int]] = [(3, 500), (4, 1500), (6, 2500)]
 POST_GRAB_GRIPPER_OPEN_PULSE = 2500
 POST_GRAB_HOME_POSE: list[tuple[int, int]] = list(RobotConstants.HOME_SERVO_PULSES)
 
