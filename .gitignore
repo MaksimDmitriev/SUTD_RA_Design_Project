@@ -37,6 +37,7 @@ Robot-Code_SUTD_RA_Design_Project/logs/
 Robot-Code_SUTD_RA_Design_Project/data/
 yolo_dataset/
 yolo_dataset_v2/
+yolo_dataset_v3/
 *.log
 
 # ML artifacts and model caches
@@ -70,6 +71,7 @@ output/
 outputs/
 runs/
 runs_v2/
+runs_v3/
 /tmp/
 
 # Other projects 
