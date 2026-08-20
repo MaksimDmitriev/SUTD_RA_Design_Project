@@ -16,6 +16,10 @@ The current prototype demonstrates two categories: red useful objects and purple
 
 [Watch SortiBot in action on YouTube](https://www.youtube.com/watch?v=B0TwQD-e6d0)
 
+## Project webasite
+
+[View the SortiBot project website on GitHub](https://github.com/MaksimDmitriev/SUTD_RA_Design_Project)
+
 ## Project software
 
 The [`Web-dashboard`](Web-dashboard/) directory contains the React interface, FastAPI backend, computer-vision pipeline, and robot-control code. For installation, deployment, and operating instructions, see the [dashboard README](Web-dashboard/README.md).
