@@ -20,7 +20,7 @@ The current prototype demonstrates two categories: red useful objects and purple
 
 [Read about building SortiBot on Medium](https://medium.com/@maksim.a.dmitriev/building-sortibot-teaching-a-small-robot-to-find-pick-up-and-sort-objects-4f28a3799347)
 
-## Project webasite
+## Project website
 
 [View the SortiBot project website on GitHub](https://github.com/MaksimDmitriev/SUTD_RA_Design_Project)
 
