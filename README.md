@@ -22,7 +22,7 @@ The current prototype demonstrates two categories: red useful objects and purple
 
 ## Project website
 
-[View the SortiBot project website on GitHub](https://github.com/MaksimDmitriev/SUTD_RA_Design_Project)
+[View the SortiBot project website on GitHub](https://maksimdmitriev.github.io/SUTD_RA_Design_Project/)
 
 ## Project software
 
